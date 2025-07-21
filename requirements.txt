@@ -4,4 +4,6 @@ pyarrow
 lightgbm
 scikit-learn
 joblib
+numpy
+matplotlib
 requests        # if you’ll still call external API for weather
