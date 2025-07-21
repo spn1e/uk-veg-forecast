@@ -1,0 +1,7 @@
+streamlit==1.35
+pandas
+pyarrow
+lightgbm
+scikit-learn
+joblib
+requests        # if you’ll still call external API for weather
