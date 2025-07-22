@@ -9,8 +9,8 @@ import matplotlib.pyplot as plt
 ############################################################
 # CONFIG
 ############################################################
-MODEL_PATH = "models/lgbm_weekly_tuned.pkl"          # Git LFS
-FEATURE_BUFFER = "data/features_weekly.parquet"      # 13‑week history
+MODEL_PATH = "models/lgbm_weekly_tuned.pkl"          # Git LFS
+FEATURE_BUFFER = "data/features_weekly.parquet"      # 13-week history
 PLOT_COLORS = {"history": "#1f77b4", "forecast": "#d62728"}
 MAX_LAG = 12   # highest lag referenced
 
@@ -24,7 +24,7 @@ def load_model_and_buffer():
     df = pd.read_parquet(FEATURE_BUFFER)
     df = df.sort_values("week_ending")
 
-    # Keep only last 13 weeks per commodity (enough for 12‑week lag)
+    # Keep only last 13 weeks per commodity (enough for 12-week lag)
     buffer = (
         df.groupby("commodity")
           .tail(13)
@@ -56,7 +56,7 @@ def safe_tail_sum(series: pd.Series, w: int):
 
 
 def build_feature_row(hist: pd.DataFrame) -> pd.Series:
-    """Build one model feature row from <13‑row> history DataFrame."""
+    """Build one model feature row from <13-row> history DataFrame."""
     row = {}
     # price lags
     for k in (1, 2, 4, 8, 12):
@@ -75,7 +75,11 @@ def build_feature_row(hist: pd.DataFrame) -> pd.Series:
     row["tmin_mean"] = hist.tmin_mean.iloc[-1]
 
     # calendar dummies
-    last_date = hist.index.get_level_values(1)[-1]
+    # handle single and multi-index for last date
+    if isinstance(hist.index, pd.MultiIndex):
+        last_date = hist.index.get_level_values(-1)[-1]
+    else:
+        last_date = hist.index[-1]
     week_no = last_date.isocalendar().week
     row["week_num"] = week_no
     row["sin_week"] = math.sin(2 * math.pi * week_no / 52)
@@ -105,7 +109,7 @@ def forecast_prices(veg: str, horizon: int) -> list[float]:
         price = round(math.exp(log_pred), 3)
         preds.append(price)
 
-        # create pseudo‑row for next iteration
+        # create pseudo-row for next iteration
         next_week = hist.index[-1] + timedelta(days=7)
         pseudo = feats.to_frame().T
         pseudo = pseudo.assign(price_gbp_kg=price)
@@ -128,7 +132,7 @@ def plot_history_and_forecast(hist: pd.DataFrame, preds: list[float]):
 # STREAMLIT UI
 ############################################################
 
-st.title("🇬🇧 UK Vegetable Price Forecaster (all‑in‑one)")
+st.title("🇬🇧 UK Vegetable Price Forecaster (all-in-one)")
 
 veg_options = sorted(BUFFER.index.get_level_values(0).unique())
 veg = st.selectbox("Select vegetable", veg_options)
@@ -137,9 +141,9 @@ horizon = st.slider("Forecast horizon (weeks)", 1, 4, 1)
 if st.button("Forecast"):
     history = BUFFER.xs(veg)
     predictions = forecast_prices(veg, horizon)
-    st.subheader(f"Next {horizon}‑week forecast for {veg.title()}")
+    st.subheader(f"Next {horizon}-week forecast for {veg.title()}")
     st.write({f"Week +{i+1}": p for i, p in enumerate(predictions)})
     plot_history_and_forecast(history, predictions)
 
 st.markdown("---")
-st.caption("Model: LightGBM tuned, log‑target.  Data window: Jun‑2018 → Dec‑2024")
+st.caption("Model: LightGBM tuned, log-target.  Data window: Jun-2018 → Dec-2024")
