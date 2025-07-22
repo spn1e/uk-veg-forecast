@@ -13,7 +13,7 @@ st.set_page_config(page_title="UK Vegetable Price Predictor", layout="wide")
 @st.cache_data
 def load_data():
     """Load the features dataset"""
-    df = pd.read_parquet('data/features_weekly.parquet')
+    df = pd.read_parquet('features_weekly.parquet')
     df['week_ending'] = pd.to_datetime(df['week_ending'])
     return df
 
