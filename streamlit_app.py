@@ -32,7 +32,7 @@ def load_model_and_buffer():
     )
 
     # Derive feature list (all model inputs)
-    drop_cols = {"commodity", "week_ending", "price_gbp_kg"}
+    drop_cols = {"commodity", "week_ending", "price_gbp_kg", "log_price"}  # Added log_price
     feat_cols = [c for c in df.columns if c not in drop_cols]
     return model, feat_cols, buffer
 
@@ -51,6 +51,10 @@ def safe_tail_sum(series: pd.Series, w: int):
     """Sum of last w items; if shorter, sum whole series."""
     return series.tail(w).sum() if len(series) >= w else series.sum()
 
+def safe_tail_mean(series: pd.Series, w: int):
+    """Mean of last w items; if shorter, mean of whole series."""
+    return series.tail(w).mean() if len(series) >= w else series.mean()
+
 ############################################################
 # FEATURE BUILDER
 ############################################################
@@ -65,22 +69,24 @@ def build_feature_row(hist: pd.DataFrame) -> pd.Series:
     # rolling price
     row["price_roll_4"] = hist.price_gbp_kg.tail(4).mean()
 
-    # weather aggregates
+    # weather aggregates - FIXED: Added raw rain/sun and 4-week tmax avg
+    row["rain_sum"] = hist.rain_sum.iloc[-1]  # Last week's rain
+    row["sun_sum"] = hist.sun_sum.iloc[-1]    # Last week's sun
+    row["tmax_avg_4"] = safe_tail_mean(hist.tmax_mean, 4)  # 4-week tmax avg
+    
     for w in (4, 8):
         row[f"rain_sum_{w}"] = safe_tail_sum(hist.rain_sum, w)
         row[f"sun_sum_{w}"]  = safe_tail_sum(hist.sun_sum, w)
 
-    # last week's weather
+    # last week's weather - FIXED: Added tmin_mean
     row["tmax_mean"] = hist.tmax_mean.iloc[-1]
     row["tmin_mean"] = hist.tmin_mean.iloc[-1]
 
     # calendar features
-    # get the actual date value from index
     if isinstance(hist.index, pd.MultiIndex):
         last_date_val = hist.index.get_level_values(-1)[-1]
     else:
         last_date_val = hist.index[-1]
-    # convert to pandas Timestamp
     last_date_ts = pd.to_datetime(last_date_val)
     week_no = last_date_ts.isocalendar().week
     row["week_num"] = week_no
