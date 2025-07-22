@@ -51,35 +51,42 @@ def safe_tail_sum(series, w:int):
     return series.tail(w).sum() if len(series) >= w else series.sum()
 
 def build_feature_row(hist: pd.DataFrame) -> pd.Series:
-    """Build one feature row consistent with training."""
-    last_date = hist.index[-1] if not isinstance(hist.index, pd.MultiIndex) \
-               else hist.index.get_level_values(-1)[-1]
-    row = {
-        "tmax_mean" : hist.tmax_mean.iloc[-1],
-        "tmin_mean" : hist.tmin_mean.iloc[-1],
-        "week_num"  : last_date.isocalendar().week,
-        "month"     : last_date.month,
-        # macro / holiday
-        "fx_usd_gbp": hist.fx_usd_gbp.iloc[-1],
-        "brent_usd_bbl": hist.brent_usd_bbl.iloc[-1],
-        "is_holiday": hist.is_holiday.iloc[-1],
-    }
+    """Assemble one feature row for the model, handling short histories."""
+    row = {}
 
-    # lags
-    for k in (1,2,4,8,12):
+    # ---------- latest macro & holiday ----------
+    for col in ("fx_usd_gbp", "brent_usd_bbl", "is_holiday"):
+        row[col] = hist[col].iloc[-1]
+
+    # ---------- lags & rolling ----------
+    for k in (1, 2, 4, 8, 12):
         row[f"price_lag_{k}"] = safe_lag(hist.price_gbp_kg, k)
-    # rolling + weather windows
+
     row["price_roll_4"] = hist.price_gbp_kg.tail(4).mean()
-    for w in (4,8):
+
+    for w in (4, 8):
         row[f"rain_sum_{w}"] = safe_tail_sum(hist.rain_sum, w)
         row[f"sun_sum_{w}"]  = safe_tail_sum(hist.sun_sum,  w)
 
-    # seasonal sin/cos (ensure week_num exists)
-    row["sin_week"] = math.sin(2 * math.pi * row["week_num"] / 52)
-    row["cos_week"] = math.cos(2 * math.pi * row["week_num"] / 52)
+    # ---------- weather last week ----------
+    row["tmax_mean"] = hist.tmax_mean.iloc[-1]
+    row["tmin_mean"] = hist.tmin_mean.iloc[-1]
 
-    # ensure training order
-    return pd.Series(row)[FEAT_COLS]
+    # ---------- calendar dummies ----------
+    # works for both single- and MultiIndex
+    last_date = hist.index[-1] if not isinstance(hist.index, pd.MultiIndex) \
+               else hist.index.get_level_values(-1)[-1]
+    last_date = pd.to_datetime(last_date)
+
+    week_no = last_date.isocalendar().week
+    row["week_num"] = week_no
+    row["month"]    = last_date.month
+    row["sin_week"] = math.sin(2 * math.pi * week_no / 52)
+    row["cos_week"] = math.cos(2 * math.pi * week_no / 52)
+
+    # return in training-column order, filling missing with NaN
+    return pd.Series(row).reindex(FEAT_COLS, fill_value=np.nan)
+
 
 def forecast(veg:str, horizon:int)->list[float]:
     hist = BUFFER.xs(veg.upper()).copy()
