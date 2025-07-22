@@ -67,13 +67,13 @@ def safe_tail_mean(series: pd.Series, w: int):
     """Safely get mean of last w values, handling short series"""
     return series.tail(w).mean() if len(series) >= w else series.mean()
 
-def build_feature_row(hist: pd.DataFrame) -> pd.Series:
+def build_feature_row(hist: pd.DataFrame) -> pd.DataFrame:
     """Build feature row for prediction based on historical data"""
     row = {}
     
     # Handle case where hist might be empty or have insufficient data
     if len(hist) == 0:
-        return pd.Series(row).reindex(FEAT_COLS, fill_value=0)
+        return pd.DataFrame([{}]).reindex(columns=FEAT_COLS, fill_value=0)
     
     # Latest macro & holiday indicators
     if "fx_usd_gbp" in hist.columns:
@@ -81,7 +81,7 @@ def build_feature_row(hist: pd.DataFrame) -> pd.Series:
     if "brent_usd_bbl" in hist.columns:
         row["brent_usd_bbl"] = hist["brent_usd_bbl"].iloc[-1]
     if "is_holiday" in hist.columns:
-        row["is_holiday"] = hist["is_holiday"].iloc[-1]
+        row["is_holiday"] = int(hist["is_holiday"].iloc[-1])  # Ensure integer for categorical
 
     # Price lags and rolling features
     if "price_gbp_kg" in hist.columns:
@@ -107,19 +107,27 @@ def build_feature_row(hist: pd.DataFrame) -> pd.Series:
     if "tmin_mean" in hist.columns:
         row["tmin_mean"] = hist["tmin_mean"].iloc[-1]
 
-    # Calendar features
+    # Calendar features - ensure proper data types
     last_date = hist.index[-1] if not isinstance(hist.index, pd.MultiIndex) \
                else hist.index.get_level_values(-1)[-1]
     last_date = pd.to_datetime(last_date)
     
     week_no = last_date.isocalendar().week
-    row["week_num"] = week_no
-    row["month"] = last_date.month
+    row["week_num"] = int(week_no)  # Ensure integer for categorical
+    row["month"] = int(last_date.month)  # Ensure integer for categorical
     row["sin_week"] = math.sin(2 * math.pi * week_no / 52)
     row["cos_week"] = math.cos(2 * math.pi * week_no / 52)
 
-    # Return series aligned with feature columns, filling missing with 0
-    return pd.Series(row).reindex(FEAT_COLS, fill_value=0)
+    # Create DataFrame and ensure proper data types
+    df = pd.DataFrame([row]).reindex(columns=FEAT_COLS, fill_value=0)
+    
+    # Ensure categorical columns have correct data types
+    categorical_cols = ["is_holiday", "week_num", "month"]
+    for col in categorical_cols:
+        if col in df.columns:
+            df[col] = df[col].astype('int32')
+    
+    return df
 
 
 def forecast_commodity(commodity: str, horizon: int):
@@ -135,24 +143,35 @@ def forecast_commodity(commodity: str, horizon: int):
         preds = []
         
         for step in range(horizon):
-            # Build feature vector
-            feats = build_feature_row(hist)
+            # Build feature vector (returns DataFrame now)
+            feats_df = build_feature_row(hist)
             
             # Make prediction (log price)
-            log_pred = model.predict(feats.to_frame().T)[0]
+            log_pred = model.predict(feats_df)[0]
             price = round(math.exp(log_pred), 3)
             preds.append(price)
             
             # Create pseudo row for next iteration
             next_week = hist.index[-1] + timedelta(days=7)
             
-            # Build new row with predicted price
-            new_row_data = feats.copy()
+            # Build new row with predicted price - use all original columns structure
+            new_row_data = hist.iloc[-1:].copy()
+            new_row_data.index = [next_week]
             new_row_data["price_gbp_kg"] = price
             
+            # Update any time-dependent features for the new row
+            week_no = next_week.isocalendar().week
+            if "week_num" in new_row_data.columns:
+                new_row_data["week_num"] = int(week_no)
+            if "month" in new_row_data.columns:
+                new_row_data["month"] = int(next_week.month)
+            if "sin_week" in new_row_data.columns:
+                new_row_data["sin_week"] = math.sin(2 * math.pi * week_no / 52)
+            if "cos_week" in new_row_data.columns:
+                new_row_data["cos_week"] = math.cos(2 * math.pi * week_no / 52)
+            
             # Add to history
-            new_row = pd.DataFrame([new_row_data], index=[next_week])
-            hist = pd.concat([hist, new_row]).tail(MAX_LAG + 1)
+            hist = pd.concat([hist, new_row_data]).tail(MAX_LAG + 1)
         
         return preds, hist
         
