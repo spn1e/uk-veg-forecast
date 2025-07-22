@@ -24,18 +24,17 @@ def load_model_and_buffer():
     df = pd.read_parquet(FEATURE_BUFFER)
     df = df.sort_values("week_ending")
 
-    # Keep only last 13 weeks per commodity (enough for 12-week lag)
+    # Keep only last MAX_LAG+1 weeks per commodity (for lags and rolls)
     buffer = (
         df.groupby("commodity")
-          .tail(13)
-          .set_index(["commodity", "week_ending"])
+          .tail(MAX_LAG + 1)
+          .set_index(["commodity", "week_ending"] )
     )
 
     # Derive feature list (all model inputs)
     drop_cols = {"commodity", "week_ending", "price_gbp_kg"}
     feat_cols = [c for c in df.columns if c not in drop_cols]
     return model, feat_cols, buffer
-
 
 model, FEAT_COLS, BUFFER = load_model_and_buffer()
 
@@ -45,18 +44,19 @@ model, FEAT_COLS, BUFFER = load_model_and_buffer()
 
 def safe_lag(series: pd.Series, k: int):
     """Return value k steps back; if not enough history, use earliest."""
-    if len(series) >= k:
-        return series.iloc[-k]
-    return series.iloc[0]  # fallback to oldest available
+    return series.iloc[-k] if len(series) >= k else series.iloc[0]
 
 
 def safe_tail_sum(series: pd.Series, w: int):
     """Sum of last w items; if shorter, sum whole series."""
     return series.tail(w).sum() if len(series) >= w else series.sum()
 
+############################################################
+# FEATURE BUILDER
+############################################################
 
 def build_feature_row(hist: pd.DataFrame) -> pd.Series:
-    """Build one model feature row from <13-row> history DataFrame."""
+    """Build one feature row from the most-recent history."""
     row = {}
     # price lags
     for k in (1, 2, 4, 8, 12):
@@ -68,37 +68,42 @@ def build_feature_row(hist: pd.DataFrame) -> pd.Series:
     # weather aggregates
     for w in (4, 8):
         row[f"rain_sum_{w}"] = safe_tail_sum(hist.rain_sum, w)
-        row[f"sun_sum_{w}"]  = safe_tail_sum(hist.sun_sum,  w)
+        row[f"sun_sum_{w}"]  = safe_tail_sum(hist.sun_sum, w)
 
     # last week's weather
     row["tmax_mean"] = hist.tmax_mean.iloc[-1]
     row["tmin_mean"] = hist.tmin_mean.iloc[-1]
 
-    # calendar dummies
-    # handle single and multi-index for last date
+    # calendar features
+    # get the actual date value from index
     if isinstance(hist.index, pd.MultiIndex):
-        last_date = hist.index.get_level_values(-1)[-1]
+        last_date_val = hist.index.get_level_values(-1)[-1]
     else:
-        last_date = hist.index[-1]
-    week_no = last_date.isocalendar().week
+        last_date_val = hist.index[-1]
+    # convert to pandas Timestamp
+    last_date_ts = pd.to_datetime(last_date_val)
+    week_no = last_date_ts.isocalendar().week
     row["week_num"] = week_no
     row["sin_week"] = math.sin(2 * math.pi * week_no / 52)
     row["cos_week"] = math.cos(2 * math.pi * week_no / 52)
-    row["month"] = last_date.month
+    row["month"] = last_date_ts.month
 
     # macro & holiday (carry forward last known)
-    for col in ("fx_usd_gbp", "brent_usd_bbl", "is_holiday"):
+    for col in ("fx_usd_gbp", "brent_usd_bbl", "is_holiday"):  
         row[col] = hist[col].iloc[-1]
 
     # ensure order matches training
     return pd.Series(row)[FEAT_COLS]
 
+############################################################
+# FORECASTING & PLOTTING
+############################################################
 
 def forecast_prices(veg: str, horizon: int) -> list[float]:
-    """Iteratively forecast up to `horizon` weeks ahead."""
+    """Generate forecasts for `horizon` weeks ahead for one veg."""
     veg = veg.upper()
     if veg not in BUFFER.index.get_level_values(0):
-        st.error(f"Commodity '{veg}' not in buffer.")
+        st.error(f"Commodity '{veg}' not found in buffer.")
         st.stop()
 
     hist = BUFFER.xs(veg).copy()
@@ -109,10 +114,9 @@ def forecast_prices(veg: str, horizon: int) -> list[float]:
         price = round(math.exp(log_pred), 3)
         preds.append(price)
 
-        # create pseudo-row for next iteration
+        # append pseudo-row for next iteration
         next_week = hist.index[-1] + timedelta(days=7)
-        pseudo = feats.to_frame().T
-        pseudo = pseudo.assign(price_gbp_kg=price)
+        pseudo = feats.to_frame().T.assign(price_gbp_kg=price)
         pseudo.index = [next_week]
         hist = pd.concat([hist, pseudo]).tail(MAX_LAG + 1)
     return preds
@@ -146,4 +150,4 @@ if st.button("Forecast"):
     plot_history_and_forecast(history, predictions)
 
 st.markdown("---")
-st.caption("Model: LightGBM tuned, log-target.  Data window: Jun-2018 → Dec-2024")
+st.caption("Model: LightGBM tuned, log-target. Data window: Jun-2018 → Dec-2024")
