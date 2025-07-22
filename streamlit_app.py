@@ -21,13 +21,20 @@ PLOT_COLORS = {
 ############################################################
 @st.cache_resource(show_spinner="Loading model …")
 def load_model_and_buffer():
-    model, feat_cols = joblib.load(MODEL_PATH)
+    model = joblib.load(MODEL_PATH)           # one object only
     df = pd.read_parquet(FEATURE_BUFFER)
+
     df = df.sort_values("week_ending")
     buffer = (df.groupby("commodity")
-                .tail(13)               # last 13 weeks per veg
+                .tail(13)
                 .set_index(["commodity", "week_ending"]))
+
+    # Derive feature list: everything except ID/target columns
+    FEAT_EXCLUDE = {"commodity", "week_ending", "price_gbp_kg"}
+    feat_cols = [c for c in df.columns if c not in FEAT_EXCLUDE]
+
     return model, feat_cols, buffer
+
 
 model, FEAT_COLS, BUFFER = load_model_and_buffer()
 
