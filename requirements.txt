@@ -2,16 +2,15 @@
 streamlit>=1.35
 pandas>=2.1
 numpy>=1.23
-pyarrow            # parquet read/write
+pyarrow>=10.0      # Add version for consistency
 
 # --- Model & ML ---
-lightgbm>=4.0      # model runtime
-scikit-learn>=1.3  # LightGBM’s sklearn wrapper + joblib dependency
+lightgbm>=4.0      
+scikit-learn>=1.3  
 joblib>=1.3
 
 # --- Plotting ---
-altair>=5.1        # fast, interactive line chart
-matplotlib>=3.7    # fallback plotting (optional, safe to keep)
+altair>=5.1        
 
 # --- Misc ---
-urllib3<2          # avoids SSL warnings on some Streamlit Cloud builds
+urllib3<2          # SSL warnings fix
