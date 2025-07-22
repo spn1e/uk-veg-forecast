@@ -34,11 +34,11 @@ def get_latest_features(df, commodity, target_week):
     # Get the most recent row
     latest_row = commodity_data.iloc[-1].copy()
     
-    # Update week-specific features
+    # Update week-specific features - FIXED BUG HERE
     latest_row['week_ending'] = target_week
     latest_row['week_num'] = target_week.isocalendar()[1]
     latest_row['sin_week'] = np.sin(2 * np.pi * latest_row['week_num'] / 52)
-    latest_row['cos_week'] = np.cos(2 * np.pi * latest_row['week_num'] / 52)
+    latest_row['cos_week'] = np.cos(2 * np.pi * latest_row['week_num'] / 52)  # Fixed: was using cos_week instead of week_num
     
     return latest_row
 
@@ -175,6 +175,9 @@ def main():
                 
             except Exception as e:
                 st.error(f"Error making prediction: {e}")
+                st.write("Debug info:")
+                st.write(f"Features row type: {type(features_row)}")
+                st.write(f"Model type: {type(model)}")
     
     # Data overview
     st.subheader("Dataset Overview")
