@@ -1,204 +1,136 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
-import pickle
-import lightgbm as lgb
-from datetime import datetime, timedelta
-import plotly.express as px
-import plotly.graph_objects as go
+import joblib
+import math
+from datetime import timedelta
 
-st.set_page_config(page_title="UK Vegetable Price Predictor", layout="wide")
+# ─────────────────────────────────────────────
+# CONFIG
+# ─────────────────────────────────────────────
+MODEL_PATH   = "models/lgbm_weekly_tuned.pkl"        # Git‑LFS model
+BUFFER_PATH  = "data/features_weekly.parquet"        # 13‑week history
+MAX_LAG      = 12                                    # longest lag used
+COLOR_HIST   = "#1f77b4"
+COLOR_FORE   = "#d62728"
 
-@st.cache_data
-def load_data():
-    """Load the features dataset"""
-    df = pd.read_parquet('features_weekly.parquet')
-    df['week_ending'] = pd.to_datetime(df['week_ending'])
-    return df
+# ─────────────────────────────────────────────
+# LOAD MODEL + 13‑WEEK BUFFER (cached)
+# ─────────────────────────────────────────────
+@st.cache_resource(show_spinner="Loading model …")
+def load_assets():
+    model = joblib.load(MODEL_PATH)                  # LGBMRegressor only
 
-@st.cache_resource
-def load_model():
-    """Load the trained LightGBM model"""
-    with open('models/lgbm_weekly_tuned.pkl', 'rb') as f:
-        model = pickle.load(f)
-    return model
+    df = pd.read_parquet(BUFFER_PATH)
+    df["week_ending"] = pd.to_datetime(df["week_ending"])
+    df = df.sort_values("week_ending")
 
-def get_latest_features(df, commodity, target_week):
-    """Get the most recent features for a commodity to use for prediction"""
-    commodity_data = df[df['commodity'] == commodity].sort_values('week_ending')
-    
-    if len(commodity_data) == 0:
-        return None
-    
-    # Get the most recent row
-    latest_row = commodity_data.iloc[-1].copy()
-    
-    # Update week-specific features - FIXED BUG HERE
-    latest_row['week_ending'] = target_week
-    latest_row['week_num'] = target_week.isocalendar()[1]
-    latest_row['sin_week'] = np.sin(2 * np.pi * latest_row['week_num'] / 52)
-    latest_row['cos_week'] = np.cos(2 * np.pi * latest_row['week_num'] / 52)  # Fixed: was using cos_week instead of week_num
-    
-    return latest_row
-
-def predict_price(model, features_row):
-    """Make price prediction using the model"""
-    X_cols = [c for c in features_row.index if c not in ['price_gbp_kg', 'log_price', 'week_ending']]
-    X_pred = features_row[X_cols].values.reshape(1, -1)
-    
-    # Predict log price
-    log_pred = model.predict(X_pred)[0]
-    
-    # Convert back to original price
-    price_pred = np.exp(log_pred)
-    
-    return price_pred, log_pred
-
-def main():
-    st.title("🥕 UK Vegetable Price Predictor")
-    st.markdown("Predict weekly vegetable prices using machine learning")
-    
-    # Load data and model
-    try:
-        df = load_data()
-        model = load_model()
-    except Exception as e:
-        st.error(f"Error loading data or model: {e}")
-        st.stop()
-    
-    # Sidebar inputs
-    st.sidebar.header("Prediction Parameters")
-    
-    # Commodity selection
-    commodities = sorted(df['commodity'].unique())
-    selected_commodity = st.sidebar.selectbox("Select Commodity", commodities)
-    
-    # Week selection
-    min_date = df['week_ending'].min()
-    max_date = df['week_ending'].max()
-    future_date = max_date + timedelta(weeks=4)
-    
-    target_week = st.sidebar.date_input(
-        "Select Week Ending Date",
-        value=future_date,
-        min_value=min_date,
-        max_value=future_date
+    # keep last 13 rows per commodity
+    buffer = (
+        df.groupby("commodity")
+          .tail(MAX_LAG + 1)
+          .set_index(["commodity", "week_ending"])
     )
-    target_week = pd.to_datetime(target_week)
-    
-    # Make prediction
-    if st.sidebar.button("Predict Price", type="primary"):
-        features_row = get_latest_features(df, selected_commodity, target_week)
-        
-        if features_row is None:
-            st.error(f"No data available for {selected_commodity}")
-        else:
-            try:
-                predicted_price, log_pred = predict_price(model, features_row)
-                
-                # Display results
-                col1, col2, col3 = st.columns(3)
-                
-                with col1:
-                    st.metric(
-                        label="Predicted Price",
-                        value=f"£{predicted_price:.2f}/kg"
-                    )
-                
-                with col2:
-                    st.metric(
-                        label="Commodity",
-                        value=selected_commodity
-                    )
-                
-                with col3:
-                    st.metric(
-                        label="Week Ending",
-                        value=target_week.strftime("%Y-%m-%d")
-                    )
-                
-                # Historical price chart
-                commodity_history = df[df['commodity'] == selected_commodity].copy()
-                commodity_history = commodity_history.sort_values('week_ending')
-                
-                fig = go.Figure()
-                
-                # Historical prices
-                fig.add_trace(go.Scatter(
-                    x=commodity_history['week_ending'],
-                    y=commodity_history['price_gbp_kg'],
-                    mode='lines+markers',
-                    name='Historical Prices',
-                    line=dict(color='blue')
-                ))
-                
-                # Predicted price
-                fig.add_trace(go.Scatter(
-                    x=[target_week],
-                    y=[predicted_price],
-                    mode='markers',
-                    name='Predicted Price',
-                    marker=dict(color='red', size=12, symbol='star')
-                ))
-                
-                fig.update_layout(
-                    title=f"{selected_commodity} Price History and Prediction",
-                    xaxis_title="Week Ending",
-                    yaxis_title="Price (£/kg)",
-                    hovermode='x unified'
-                )
-                
-                st.plotly_chart(fig, use_container_width=True)
-                
-                # Feature importance for this prediction
-                st.subheader("Model Insights")
-                
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    # Recent price statistics
-                    recent_prices = commodity_history.tail(10)['price_gbp_kg']
-                    st.write("**Recent Price Statistics (Last 10 weeks)**")
-                    st.write(f"Mean: £{recent_prices.mean():.2f}/kg")
-                    st.write(f"Std: £{recent_prices.std():.2f}/kg")
-                    st.write(f"Min: £{recent_prices.min():.2f}/kg")
-                    st.write(f"Max: £{recent_prices.max():.2f}/kg")
-                
-                with col2:
-                    # Key features used
-                    st.write("**Key Features Used**")
-                    st.write("• Price lags (1, 4, 8, 12 weeks)")
-                    st.write("• Weather data (temperature, rainfall, sunshine)")
-                    st.write("• Seasonal patterns (sin/cos week)")
-                    st.write("• Commodity-specific effects")
-                
-            except Exception as e:
-                st.error(f"Error making prediction: {e}")
-                st.write("Debug info:")
-                st.write(f"Features row type: {type(features_row)}")
-                st.write(f"Model type: {type(model)}")
-    
-    # Data overview
-    st.subheader("Dataset Overview")
-    
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.metric("Total Records", len(df))
-    
-    with col2:
-        st.metric("Commodities", df['commodity'].nunique())
-    
-    with col3:
-        st.metric("Date Range", f"{df['week_ending'].min().strftime('%Y-%m')} to {df['week_ending'].max().strftime('%Y-%m')}")
-    
-    with col4:
-        st.metric("Features", len([c for c in df.columns if c not in ['price_gbp_kg', 'log_price', 'week_ending']]))
-    
-    # Sample data
-    if st.checkbox("Show Sample Data"):
-        st.dataframe(df.head(10))
 
-if __name__ == "__main__":
-    main()
+    # model feature list = every column except ID / targets
+    drop = {
+        "commodity", "week_ending", "price_gbp_kg", "log_price"
+    }
+    feat_cols = [c for c in df.columns if c not in drop]
+    return model, feat_cols, buffer
+
+model, FEAT_COLS, BUFFER = load_assets()
+
+# ─────────────────────────────────────────────
+# HELPER FUNCTIONS
+# ─────────────────────────────────────────────
+def safe_lag(series: pd.Series, k:int):
+    return series.iloc[-k] if len(series) >= k else series.iloc[0]
+
+def safe_tail_sum(series, w:int):
+    return series.tail(w).sum() if len(series) >= w else series.sum()
+
+def build_feature_row(hist: pd.DataFrame) -> pd.Series:
+    """Build one feature row consistent with training."""
+    last_date = hist.index[-1] if not isinstance(hist.index, pd.MultiIndex) \
+               else hist.index.get_level_values(-1)[-1]
+    row = {
+        "tmax_mean" : hist.tmax_mean.iloc[-1],
+        "tmin_mean" : hist.tmin_mean.iloc[-1],
+        "week_num"  : last_date.isocalendar().week,
+        "month"     : last_date.month,
+        # macro / holiday
+        "fx_usd_gbp": hist.fx_usd_gbp.iloc[-1],
+        "brent_usd_bbl": hist.brent_usd_bbl.iloc[-1],
+        "is_holiday": hist.is_holiday.iloc[-1],
+    }
+
+    # lags
+    for k in (1,2,4,8,12):
+        row[f"price_lag_{k}"] = safe_lag(hist.price_gbp_kg, k)
+    # rolling + weather windows
+    row["price_roll_4"] = hist.price_gbp_kg.tail(4).mean()
+    for w in (4,8):
+        row[f"rain_sum_{w}"] = safe_tail_sum(hist.rain_sum, w)
+        row[f"sun_sum_{w}"]  = safe_tail_sum(hist.sun_sum,  w)
+
+    # seasonal sin/cos (ensure week_num exists)
+    row["sin_week"] = math.sin(2 * math.pi * row["week_num"] / 52)
+    row["cos_week"] = math.cos(2 * math.pi * row["week_num"] / 52)
+
+    # ensure training order
+    return pd.Series(row)[FEAT_COLS]
+
+def forecast(veg:str, horizon:int)->list[float]:
+    hist = BUFFER.xs(veg.upper()).copy()
+    preds = []
+    for _ in range(horizon):
+        feats = build_feature_row(hist)
+        log_pred = model.predict(feats.to_frame().T)[0]
+        price = round(math.exp(log_pred),3)
+        preds.append(price)
+        # append pseudo‑row
+        next_wk = hist.index[-1] + timedelta(days=7)
+        pseudo  = feats.to_frame().T.assign(price_gbp_kg=price)
+        pseudo.index = [next_wk]
+        hist = pd.concat([hist, pseudo]).tail(MAX_LAG+1)
+    return preds, hist
+
+# ─────────────────────────────────────────────
+# STREAMLIT UI
+# ─────────────────────────────────────────────
+st.title("🇬🇧  UK Vegetable Price Forecaster")
+
+veg_list = sorted(BUFFER.index.get_level_values(0).unique())
+veg      = st.selectbox("Choose a vegetable", veg_list)
+horizon  = st.slider("Forecast horizon (weeks)", 1, 4, 1)
+
+if st.button("Generate forecast"):
+    preds, hist = forecast(veg, horizon)
+
+    st.subheader(f"{veg.title()} – next {horizon} week(s)")
+    st.json({f"week+{i+1}": p for i,p in enumerate(preds)})
+
+    # plot
+    import altair as alt
+    hist_df = hist.reset_index()
+    fut_df  = pd.DataFrame({
+        "week_ending": [hist.index[-1] + timedelta(days=7*(i+1)) for i in range(horizon)],
+        "price_gbp_kg": preds,
+    })
+    chart = (
+        alt.Chart(pd.concat([hist_df, fut_df]))
+        .mark_line(point=True)
+        .encode(
+            x="week_ending:T",
+            y="price_gbp_kg:Q",
+            color=alt.condition(
+                alt.datum.week_ending <= hist.index[-1],
+                alt.value(COLOR_HIST),
+                alt.value(COLOR_FORE),
+            ),
+        )
+    )
+    st.altair_chart(chart, use_container_width=True)
+
+st.caption("Model: LightGBM (log target) with extended lags & weather features – data window Jun 2018 → Dec 2024.")
