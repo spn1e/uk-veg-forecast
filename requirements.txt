@@ -1,6 +1,17 @@
-streamlit>=1.28.0
-pandas>=1.5.0
-numpy>=1.24.0
-lightgbm>=4.0.0
-plotly>=5.15.0
-pyarrow>=12.0.0
+# --- Core app ---
+streamlit>=1.35
+pandas>=2.1
+numpy>=1.23
+pyarrow            # parquet read/write
+
+# --- Model & ML ---
+lightgbm>=4.0      # model runtime
+scikit-learn>=1.3  # LightGBM’s sklearn wrapper + joblib dependency
+joblib>=1.3
+
+# --- Plotting ---
+altair>=5.1        # fast, interactive line chart
+matplotlib>=3.7    # fallback plotting (optional, safe to keep)
+
+# --- Misc ---
+urllib3<2          # avoids SSL warnings on some Streamlit Cloud builds
