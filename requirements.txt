@@ -18,7 +18,8 @@ requests>=2.31.0  # For OpenRouter API calls
 
 langchain>=0.0.350
 langchain-community>=0.0.10
-chromadb==0.4.15
+chromadb==0.4.24
+python-dotenv
 pydantic<2.0.0
 # Vector Database Dependencies
 sentence-transformers>=2.2.2
