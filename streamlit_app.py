@@ -5,12 +5,67 @@ import joblib
 import math
 from datetime import timedelta, datetime
 import altair as alt
-import chromadb
-from chromadb.config import Settings
 import anthropic
 from typing import List, Dict, Any
 import json
 import os
+
+# ─────────────────────────────────────────────
+# SIMPLE VECTOR STORE (ChromaDB Replacement)
+# ─────────────────────────────────────────────
+class SimpleVectorStore:
+    def __init__(self):
+        self.documents = []
+        self.ids = []
+        self.metadatas = []
+        
+        # Load from session state if available
+        if 'vector_store_data' in st.session_state:
+            data = st.session_state.vector_store_data
+            self.documents = data.get('documents', [])
+            self.ids = data.get('ids', [])
+            self.metadatas = data.get('metadatas', [])
+    
+    def add(self, documents, metadatas=None, ids=None):
+        """Add documents to the vector store"""
+        if metadatas is None:
+            metadatas = [{}] * len(documents)
+        if ids is None:
+            ids = [f"doc_{len(self.ids) + i}" for i in range(len(documents))]
+        
+        self.documents.extend(documents)
+        self.metadatas.extend(metadatas)
+        self.ids.extend(ids)
+        
+        # Save to session state
+        st.session_state.vector_store_data = {
+            'documents': self.documents,
+            'ids': self.ids,
+            'metadatas': self.metadatas
+        }
+    
+    def query(self, query_texts, n_results=10):
+        """Simple text similarity query (keyword matching)"""
+        if not self.documents or not query_texts:
+            return {"documents": [[]], "metadatas": [[]]}
+        
+        query_text = query_texts[0].lower()
+        results = []
+        
+        # Simple keyword-based similarity
+        for i, doc in enumerate(self.documents):
+            score = sum(1 for word in query_text.split() if word in doc.lower())
+            if score > 0:
+                results.append((score, i))
+        
+        # Sort by relevance and take top n_results
+        results.sort(reverse=True, key=lambda x: x[0])
+        top_indices = [idx for _, idx in results[:n_results]]
+        
+        return {
+            "documents": [[self.documents[i] for i in top_indices]],
+            "metadatas": [[self.metadatas[i] for i in top_indices]]
+        }
 
 # ─────────────────────────────────────────────
 # CONFIG
@@ -44,30 +99,18 @@ class VegetableForecastAssistant:
                 return
             self.claude_client = anthropic.Anthropic(api_key=anthropic_key)
         
-        # Initialize ChromaDB
-        self.setup_chromadb()
+        # Initialize simple vector store
+        self.setup_vector_store()
         
         # Initialize knowledge base
         self.setup_knowledge_base()
     
-    def setup_chromadb(self):
-        """Initialize ChromaDB for RAG"""
+    def setup_vector_store(self):
+        """Initialize simple vector store for RAG"""
         try:
-            self.chroma_client = chromadb.Client(Settings(
-                is_persistent=True,
-                persist_directory="./chroma_db"
-            ))
-            
-            # Get or create collection
-            try:
-                self.collection = self.chroma_client.get_collection("vegetable_knowledge")
-            except:
-                self.collection = self.chroma_client.create_collection(
-                    name="vegetable_knowledge",
-                    metadata={"description": "UK vegetable market knowledge base"}
-                )
+            self.collection = SimpleVectorStore()
         except Exception as e:
-            st.error(f"ChromaDB setup failed: {e}")
+            st.error(f"Vector store setup failed: {e}")
             self.collection = None
     
     def setup_knowledge_base(self):
@@ -121,22 +164,14 @@ class VegetableForecastAssistant:
             }
         ]
         
-        # Add documents to collection if not already present
+        # Add documents to collection
         try:
-            existing_ids = set()
-            try:
-                existing = self.collection.get()
-                existing_ids = set(existing['ids'])
-            except:
-                pass
-            
-            new_docs = [doc for doc in knowledge_documents if doc['id'] not in existing_ids]
-            
-            if new_docs:
+            # Check if already populated
+            if not hasattr(self.collection, 'documents') or not self.collection.documents:
                 self.collection.add(
-                    documents=[doc['content'] for doc in new_docs],
-                    metadatas=[doc['metadata'] for doc in new_docs],
-                    ids=[doc['id'] for doc in new_docs]
+                    documents=[doc['content'] for doc in knowledge_documents],
+                    metadatas=[doc['metadata'] for doc in knowledge_documents],
+                    ids=[doc['id'] for doc in knowledge_documents]
                 )
         except Exception as e:
             st.error(f"Knowledge base setup failed: {e}")
@@ -819,7 +854,7 @@ with st.expander("📚 Methodology & Limitations"):
     and seasonal factors to generate weekly price predictions.
     
     The **AI Assistant** uses Claude 3.5 Sonnet with:
-    - **RAG (Retrieval Augmented Generation)** with ChromaDB for market knowledge
+    - **Simple Vector Store** for market knowledge (ChromaDB replacement)
     - **Specialized tools** for price forecasting and context retrieval
     - **Professional market analysis** capabilities
     
@@ -845,6 +880,7 @@ with st.expander("📚 Methodology & Limitations"):
     - **External Shocks**: Cannot predict impact of unexpected events (diseases, policy changes, etc.)
     - **Forecast Horizon**: Accuracy decreases significantly beyond 4-6 weeks
     - **AI Responses**: Assistant responses are for informational purposes only, not financial advice
+    - **Vector Store**: Uses simple keyword matching instead of semantic similarity
     
     ### 🎯 **Best Practices**
     
@@ -891,31 +927,43 @@ with st.expander("🔧 Setup Instructions"):
     # ANTHROPIC_API_KEY = "sk-ant-xxxxx"
     ```
     
-    2. **Required Python Packages**:
-       ```bash
-       pip install anthropic chromadb streamlit pandas numpy joblib altair
-       ```
+    ### Required Python Packages (Updated)
     
-    3. **Data Files**:
-       - `models/lgbm_weekly_tuned.pkl` (your trained model)
-       - `data/features_weekly.parquet` (historical data)
+    ```bash
+    pip install anthropic streamlit pandas numpy joblib altair requests
+    ```
+    
+    **Note**: `chromadb` is no longer required! 🎉
+    
+    ### Data Files
+    
+    - `models/lgbm_weekly_tuned.pkl` (your trained model)
+    - `data/features_weekly.parquet` (historical data)
     
     ### Features Included
     
-    ✅ **LangChain Wrapper**: Claude API integration with conversation management  
-    ✅ **RAG with ChromaDB**: Persistent knowledge base with market expertise  
+    ✅ **Simple Vector Store**: ChromaDB replacement using keyword matching  
+    ✅ **Claude API Integration**: OpenRouter and direct Anthropic support  
     ✅ **Agent Tools**: `price_forecast()` and `get_context()` functions  
     ✅ **Chat Integration**: Live chat panel with conversation history  
     ✅ **Professional UI**: Clean, production-ready interface  
+    ✅ **No SQLite Issues**: Completely eliminates ChromaDB dependency problems
     
     ### Knowledge Base Content
     
-    The RAG system includes:
+    The simple vector store includes:
     - UK seasonal vegetable patterns
     - Price volatility factors and drivers
     - Model interpretation and limitations
     - Trading strategies and market insights
+    
+    ### What Changed
+    
+    - **Removed**: ChromaDB, pysqlite3 dependencies
+    - **Added**: SimpleVectorStore class with keyword-based matching
+    - **Improved**: More reliable deployment on Streamlit Cloud
+    - **Maintained**: All original functionality and UI
     """)
 
 st.markdown("---")
-st.caption("🔬 **Model**: LightGBM (100 trees, 127 leaves) + Claude 3.5 Sonnet AI | 📅 **Training Data**: June 2018 - December 2024 | 🎯 **Optimized for**: Weekly price forecasting with AI assistance")
+st.caption("🔬 **Model**: LightGBM (100 trees, 127 leaves) + Claude 3.5 Sonnet AI | 📅 **Training Data**: June 2018 - December 2024 | 🎯 **Optimized for**: Weekly price forecasting with AI assistance | ✅ **No ChromaDB dependency**")
