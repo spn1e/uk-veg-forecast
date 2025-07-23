@@ -1,16 +1,42 @@
-# --- Core app ---
-streamlit>=1.35          # Stable version for Streamlit UI
-pandas>=2.1              # Latest major version for data handling
-numpy>=1.23              # Compatible with most ML libraries
-pyarrow>=10.0            # Ensures Parquet compatibility
+# Core Streamlit and Data Processing
+streamlit>=1.28.0
+pandas>=2.0.0
+numpy>=1.24.0
 
-# --- Model & ML ---
-lightgbm>=4.0            # Required for the trained LightGBM model
-scikit-learn>=1.3        # For utilities like StandardScaler
-joblib>=1.3              # For model serialization/loading
+# Machine Learning
+joblib>=1.3.0
+lightgbm>=4.0.0
+scikit-learn>=1.3.0
 
-# --- Plotting ---
-altair>=5.1              # For interactive visualizations
+# Visualization
+altair>=5.0.0
+plotly>=5.15.0
 
-# --- Misc ---
-urllib3<2                # Avoids SSL warnings (common workaround)
+# AI Assistant and RAG
+anthropic>=0.7.0
+chromadb>=0.4.15
+langchain>=0.0.350
+langchain-community>=0.0.10
+
+# Vector Database Dependencies
+sentence-transformers>=2.2.2
+tiktoken>=0.5.0
+openai>=1.0.0  # Required by some ChromaDB embeddings
+
+# Data Format Support
+pyarrow>=13.0.0  # For parquet files
+fastparquet>=0.8.3
+
+# Utilities
+python-dateutil>=2.8.2
+requests>=2.31.0
+urllib3>=2.0.0
+
+# Optional Performance Enhancements
+numba>=0.58.0  # For faster numerical computations
+psutil>=5.9.0  # For system monitoring
+
+# Development and Testing (optional)
+pytest>=7.4.0
+black>=23.0.0
+flake8>=6.0.0
