@@ -354,8 +354,27 @@ if st.button("Generate Forecast", type="primary"):
         hist_df = history.reset_index()
         hist_df = hist_df[hist_df['price_gbp_kg'].notna()].copy()
         
+        # Debug: Check column names
+        st.write(f"DEBUG: hist_df columns: {list(hist_df.columns)}")
+        
+        # Handle different possible column names after reset_index
+        date_col = None
+        if 'week_ending' in hist_df.columns:
+            date_col = 'week_ending'
+        elif 'level_1' in hist_df.columns:  # MultiIndex reset might create level_1
+            date_col = 'level_1'
+            hist_df = hist_df.rename(columns={'level_1': 'week_ending'})
+        elif hist_df.index.name == 'week_ending':
+            # If week_ending is still in index, reset it properly
+            hist_df = hist_df.reset_index()
+            date_col = 'week_ending'
+        else:
+            # Fallback: use the index as dates
+            hist_df['week_ending'] = hist_df.index
+            date_col = 'week_ending'
+        
         # Create future dates
-        last_date = history.index[-len(predictions)-1]  # Get last historical date
+        last_date = history.index[-len(predictions)-1] if len(history.index) > len(predictions) else history.index[-1]
         future_dates = [last_date + timedelta(days=7*(i+1)) for i in range(forecast_horizon)]
         
         future_df = pd.DataFrame({
@@ -366,11 +385,17 @@ if st.button("Generate Forecast", type="primary"):
         
         hist_df["type"] = "Historical"
         
-        # Combine data
-        plot_data = pd.concat([
-            hist_df[["week_ending", "price_gbp_kg", "type"]].tail(20),  # Last 20 historical points
-            future_df
-        ]).reset_index(drop=True)
+        # Ensure we have the required columns before slicing
+        required_cols = ["week_ending", "price_gbp_kg", "type"]
+        if all(col in hist_df.columns for col in required_cols):
+            # Combine data
+            plot_data = pd.concat([
+                hist_df[required_cols].tail(20),  # Last 20 historical points
+                future_df
+            ]).reset_index(drop=True)
+        else:
+            st.error(f"Missing required columns. Available: {list(hist_df.columns)}")
+            return
         
         # Create Altair chart
         chart = alt.Chart(plot_data).mark_line(point=True, strokeWidth=3).encode(
