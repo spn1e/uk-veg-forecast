@@ -11,7 +11,7 @@ from sklearn.preprocessing import StandardScaler
 # CONFIGURATION
 # ─────────────────────────────────────────────
 MODEL_PATH = "models/lgbm_weekly_tuned.pkl"      # LightGBM model
-DATA_PATH = "features_weekly_extended.csv"      # User-provided CSV
+DATA_PATH = "data/features_weekly.parquet"       # Parquet file from your repo
 MAX_LAG = 12                                    # Maximum lag used in features
 COLOR_HIST = "#1f77b4"
 COLOR_FORE = "#d62728"
@@ -25,13 +25,17 @@ def load_assets():
     # Load model
     model = joblib.load(MODEL_PATH)
     
+    # Extract feature names and categorical features from the model
+    model_features = model.booster_.feature_name()
+    categorical_features = model.booster_.categorical_feature
+    
     # Load and preprocess data
-    df = pd.read_csv(DATA_PATH)
+    df = pd.read_parquet(DATA_PATH)
     df["week_ending"] = pd.to_datetime(df["week_ending"])
     df = df.sort_values("week_ending")
     
-    # Ensure consistent column names (fixing log_price mismatch)
-    if "log_price" not in df.columns and "log_price2024-06-09" in df.columns:
+    # Fix log_price column name mismatch
+    if "log_price2024-06-09" in df.columns and "log_price" not in df.columns:
         df = df.rename(columns={"log_price2024-06-09": "log_price"})
     
     # Create buffer with last MAX_LAG weeks per commodity
@@ -45,9 +49,9 @@ def load_assets():
     drop_cols = {"commodity", "week_ending", "price_gbp_kg", "log_price"}
     feat_cols = [c for c in df.columns if c not in drop_cols]
     
-    return model, feat_cols, buffer
+    return model, feat_cols, buffer, model_features, categorical_features
 
-model, FEAT_COLS, BUFFER = load_assets()
+model, FEAT_COLS, BUFFER, MODEL_FEATURES, CATEGORICAL_FEATURES = load_assets()
 
 # ─────────────────────────────────────────────
 # HELPER FUNCTIONS
@@ -64,36 +68,50 @@ def safe_tail_sum(series: pd.Series, w: int):
         return series.tail(w).sum()
     return series.sum()
 
-def build_feature_row(hist: pd.DataFrame) -> pd.Series:
+def build_feature_row(hist: pd.DataFrame, commodity: str) -> pd.Series:
     """Construct feature vector for prediction"""
     row = {}
     
-    # Core macroeconomic features
+    # Include commodity as a feature (categorical)
+    row["commodity"] = commodity.upper()  # Match training format
+    
+    # Macro & holiday features
     for col in ("fx_usd_gbp", "brent_usd_bbl", "is_holiday"):
-        row[col] = hist[col].iloc[-1]
+        if col in hist.columns:
+            row[col] = hist[col].iloc[-1]
     
     # Price lags (most important features)
     for k in (1, 2, 4, 8, 12):
-        row[f"price_lag_{k}"] = safe_lag(hist["price_gbp_kg"], k)
+        if f"price_lag_{k}" in MODEL_FEATURES:
+            row[f"price_lag_{k}"] = safe_lag(hist["price_gbp_kg"], k)
     
     # Rolling statistics and weather
-    row["price_roll_4"] = hist["price_gbp_kg"].tail(4).mean() if len(hist) >= 4 else np.nan
+    if "price_roll_4" in MODEL_FEATURES:
+        row["price_roll_4"] = hist["price_gbp_kg"].tail(4).mean() if len(hist) >= 4 else np.nan
     
     for w in (4, 8):
-        row[f"rain_sum_{w}"] = safe_tail_sum(hist["rain_sum"], w)
-        row[f"sun_sum_{w}"] = safe_tail_sum(hist["sun_sum"], w)
+        if f"rain_sum_{w}" in MODEL_FEATURES:
+            row[f"rain_sum_{w}"] = safe_tail_sum(hist["rain_sum"], w)
+        if f"sun_sum_{w}" in MODEL_FEATURES:
+            row[f"sun_sum_{w}"] = safe_tail_sum(hist["sun_sum"], w)
     
     # Latest weather metrics
-    row["tmax_mean"] = hist["tmax_mean"].iloc[-1]
-    row["tmin_mean"] = hist["tmin_mean"].iloc[-1]
+    if "tmax_mean" in MODEL_FEATURES:
+        row["tmax_mean"] = hist["tmax_mean"].iloc[-1]
+    if "tmin_mean" in MODEL_FEATURES:
+        row["tmin_mean"] = hist["tmin_mean"].iloc[-1]
     
     # Calendar features
     last_date = pd.to_datetime(hist.index[-1])
     week_no = last_date.isocalendar().week
-    row["week_num"] = week_no
-    row["month"] = last_date.month
-    row["sin_week"] = math.sin(2 * math.pi * week_no / 52)
-    row["cos_week"] = math.cos(2 * math.pi * week_no / 52)
+    if "week_num" in MODEL_FEATURES:
+        row["week_num"] = week_no
+    if "month" in MODEL_FEATURES:
+        row["month"] = last_date.month
+    if "sin_week" in MODEL_FEATURES:
+        row["sin_week"] = math.sin(2 * math.pi * week_no / 52)
+    if "cos_week" in MODEL_FEATURES:
+        row["cos_week"] = math.cos(2 * math.pi * week_no / 52)
     
     # Align with training features and fill missing
     return pd.Series(row).reindex(FEAT_COLS, fill_value=np.nan)
@@ -102,16 +120,20 @@ def forecast(veg: str, horizon: int):
     """Recursive multi-step forecasting"""
     hist = BUFFER.xs(veg.upper()).copy()
     preds = []
-    
+
     for _ in range(horizon):
-        feats = build_feature_row(hist)
+        feats = build_feature_row(hist, veg)  # Pass commodity
         
         # Fill NaNs with mean (if needed)
         if feats.isna().any():
             feats = feats.fillna(hist.mean())
         
         # Make prediction
-        log_pred = model.predict(feats.to_frame().T)[0]
+        log_pred = model.predict(
+            feats.to_frame().T,
+            categorical_feature=CATEGORICAL_FEATURES,
+            validate_features=False
+        )[0]
         price = round(math.exp(log_pred), 3)
         preds.append(price)
         
@@ -167,20 +189,6 @@ if st.sidebar.button("Generate Forecast"):
             ).properties(width=700)
             
             st.altair_chart(chart, use_container_width=True)
-            
-            # Feature importance display
-            st.subheader("Top Predictive Features")
-            feature_importance = pd.read_excel("lgbm_model_info.xlsx", sheet_name="Feature_Importance")
-            top_features = feature_importance.head(10)
-            
-            fig = alt.Chart(top_features).mark_bar().encode(
-                x=alt.X("Importance:Q", title="Importance Score"),
-                y=alt.Y("Feature:N", sort="-x", title="Features"),
-                color=alt.Color("rank:N", scale=alt.Scale(scheme="category10")),
-                tooltip=["Feature", "Importance"]
-            ).properties(width=600)
-            
-            st.altair_chart(fig, use_container_width=True)
             
         except Exception as e:
             st.error(f"Error generating forecast: {str(e)}")
