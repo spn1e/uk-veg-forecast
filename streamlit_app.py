@@ -27,7 +27,7 @@ def load_assets():
     
     # Extract feature names and categorical features from the model
     model_features = model.booster_.feature_name()
-    categorical_features = model.booster_.categorical_feature
+    categorical_features = model.booster_.categorical_feature_  # Fixed attribute name
     
     # Load and preprocess data
     df = pd.read_parquet(DATA_PATH)
