@@ -17,7 +17,7 @@ COLOR_HIST = "#1f77b4"
 COLOR_FORE = "#d62728"
 
 # ─────────────────────────────────────────────
-# CACHED ASSET LOADER
+# CACHED ASSET LOADER (FIXED)
 # ─────────────────────────────────────────────
 @st.cache_resource(show_spinner="Loading model and data...")
 def load_assets():
@@ -25,9 +25,21 @@ def load_assets():
     # Load model
     model = joblib.load(MODEL_PATH)
     
-    # Extract feature names and categorical features from the model
+    # Extract feature names from the model
     model_features = model.booster_.feature_name()
-    categorical_features = model.booster_.categorical_feature()  # Corrected method
+    
+    # FIX: categorical_feature is an attribute, not a method
+    # Added version compatibility handling
+    try:
+        # Newer LightGBM versions
+        categorical_features = model.booster_.categorical_feature
+    except AttributeError:
+        try:
+            # Older LightGBM versions
+            categorical_features = model._Booster.categorical_feature
+        except:
+            # Fallback to model parameters
+            categorical_features = model.get_params().get('categorical_feature', [])
     
     # Load and preprocess data
     df = pd.read_parquet(DATA_PATH)
@@ -49,9 +61,9 @@ def load_assets():
     drop_cols = {"commodity", "week_ending", "price_gbp_kg", "log_price"}
     feat_cols = [c for c in df.columns if c not in drop_cols]
     
-    return model, feat_cols, buffer, model_features, categorical_features
+    return model, feat_cols, buffer, model_features
 
-model, FEAT_COLS, BUFFER, MODEL_FEATURES, CATEGORICAL_FEATURES = load_assets()
+model, FEAT_COLS, BUFFER, MODEL_FEATURES = load_assets()
 
 # ─────────────────────────────────────────────
 # HELPER FUNCTIONS
@@ -128,12 +140,8 @@ def forecast(veg: str, horizon: int):
         if feats.isna().any():
             feats = feats.fillna(hist.mean())
         
-        # Make prediction
-        log_pred = model.predict(
-            feats.to_frame().T,
-            categorical_feature=CATEGORICAL_FEATURES,
-            validate_features=False
-        )[0]
+        # FIX: Removed unnecessary parameters from predict()
+        log_pred = model.predict(feats.to_frame().T)[0]
         price = round(math.exp(log_pred), 3)
         preds.append(price)
         
