@@ -11,7 +11,7 @@ from sklearn.preprocessing import StandardScaler
 # CONFIGURATION
 # ─────────────────────────────────────────────
 MODEL_PATH = "models/lgbm_weekly_tuned.pkl"      # LightGBM model
-DATA_PATH = "features_weekly_extended.parquet"      # User-provided CSV
+DATA_PATH = "data/features_weekly.parquet"      # User-provided CSV
 MAX_LAG = 12                                    # Maximum lag used in features
 COLOR_HIST = "#1f77b4"
 COLOR_FORE = "#d62728"
