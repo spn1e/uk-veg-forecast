@@ -3,206 +3,355 @@ import pandas as pd
 import numpy as np
 import joblib
 import math
-from datetime import timedelta
+from datetime import timedelta, datetime
 import altair as alt
-from sklearn.preprocessing import StandardScaler
 
 # ─────────────────────────────────────────────
-# CONFIGURATION
+# CONFIG
 # ─────────────────────────────────────────────
-MODEL_PATH = "models/lgbm_weekly_tuned.pkl"      # LightGBM model
-DATA_PATH = "data/features_weekly.parquet"       # Parquet file from your repo
-MAX_LAG = 12                                    # Maximum lag used in features
-COLOR_HIST = "#1f77b4"
-COLOR_FORE = "#d62728"
+MODEL_PATH   = "models/lgbm_weekly_tuned.pkl"        # Git‑LFS model
+BUFFER_PATH  = "data/features_weekly.parquet"        # 13‑week history
+MAX_LAG      = 12                                    # longest lag used
+COLOR_HIST   = "#1f77b4"
+COLOR_FORE   = "#d62728"
 
 # ─────────────────────────────────────────────
-# CACHED ASSET LOADER (FIXED)
+# LOAD MODEL + DATA (cached)
 # ─────────────────────────────────────────────
 @st.cache_resource(show_spinner="Loading model and data...")
 def load_assets():
-    """Load model and historical data with caching"""
-    # Load model
-    model = joblib.load(MODEL_PATH)
-    
-    # Extract feature names from the model
-    model_features = model.booster_.feature_name()
-    
-    # FIX: categorical_feature is an attribute, not a method
-    # Added version compatibility handling
     try:
-        # Newer LightGBM versions
-        categorical_features = model.booster_.categorical_feature
-    except AttributeError:
-        try:
-            # Older LightGBM versions
-            categorical_features = model._Booster.categorical_feature
-        except:
-            # Fallback to model parameters
-            categorical_features = model.get_params().get('categorical_feature', [])
+        model = joblib.load(MODEL_PATH)
+        st.success(f"✅ Model loaded: {model.n_estimators} trees, {model.num_leaves} max leaves")
+    except FileNotFoundError:
+        st.error(f"Model file not found: {MODEL_PATH}")
+        return None, None, None
     
-    # Load and preprocess data
-    df = pd.read_parquet(DATA_PATH)
+    try:
+        df = pd.read_parquet(BUFFER_PATH)
+    except FileNotFoundError:
+        st.error(f"Data file not found: {BUFFER_PATH}")
+        return None, None, None
+    
+    # Convert week_ending to datetime
     df["week_ending"] = pd.to_datetime(df["week_ending"])
-    df = df.sort_values("week_ending")
-    
-    # Fix log_price column name mismatch
-    if "log_price2024-06-09" in df.columns and "log_price" not in df.columns:
-        df = df.rename(columns={"log_price2024-06-09": "log_price"})
-    
-    # Create buffer with last MAX_LAG weeks per commodity
+    df = df.sort_values(["commodity", "week_ending"])
+
+    # Keep last 13 rows per commodity for buffer
     buffer = (
         df.groupby("commodity")
           .tail(MAX_LAG + 1)
+          .reset_index(drop=True)
           .set_index(["commodity", "week_ending"])
     )
-    
-    # Identify feature columns (all except IDs, target, and date)
-    drop_cols = {"commodity", "week_ending", "price_gbp_kg", "log_price"}
-    feat_cols = [c for c in df.columns if c not in drop_cols]
-    
-    return model, feat_cols, buffer, model_features
 
-model, FEAT_COLS, BUFFER, MODEL_FEATURES = load_assets()
+    # Model expects these exact features based on your analysis
+    expected_features = [
+        "price_lag_1", "price_lag_2", "price_lag_4", "tmax_mean", "tmin_mean",
+        "brent_usd_bbl", "fx_usd_gbp", "price_roll_4", "week_num", "month",
+        "price_lag_8", "price_lag_12", "rain_sum", "sun_sum", "rain_sum_4",
+        "rain_sum_8", "sun_sum_4", "sun_sum_8", "sin_week", "cos_week",
+        "is_holiday", "commodity"
+    ]
+    
+    # Use expected features as the definitive list
+    feat_cols = expected_features
+    
+    return model, feat_cols, buffer
 
 # ─────────────────────────────────────────────
 # HELPER FUNCTIONS
 # ─────────────────────────────────────────────
 def safe_lag(series: pd.Series, k: int):
-    """Get k-th lagged value with safety check"""
-    if len(series) >= k:
-        return series.iloc[-k]
-    return np.nan
+    """Safely get lagged value, handling short series"""
+    return series.iloc[-k] if len(series) >= k else series.iloc[0]
 
 def safe_tail_sum(series: pd.Series, w: int):
-    """Sum last w values with safety check"""
-    if len(series) >= w:
-        return series.tail(w).sum()
-    return series.sum()
+    """Safely sum last w values, handling short series"""
+    return series.tail(w).sum() if len(series) >= w else series.sum()
 
-def build_feature_row(hist: pd.DataFrame, commodity: str) -> pd.Series:
-    """Construct feature vector for prediction"""
+def safe_tail_mean(series: pd.Series, w: int):
+    """Safely get mean of last w values, handling short series"""
+    return series.tail(w).mean() if len(series) >= w else series.mean()
+
+def build_feature_row(hist: pd.DataFrame, commodity_name: str) -> pd.DataFrame:
+    """Build feature row for prediction based on historical data"""
     row = {}
     
-    # Include commodity as a feature (categorical)
-    row["commodity"] = commodity.upper()  # Match training format
+    # Handle case where hist might be empty or have insufficient data
+    if len(hist) == 0:
+        return pd.DataFrame([{}]).reindex(columns=FEAT_COLS, fill_value=0)
     
-    # Macro & holiday features
-    for col in ("fx_usd_gbp", "brent_usd_bbl", "is_holiday"):
-        if col in hist.columns:
-            row[col] = hist[col].iloc[-1]
-    
-    # Price lags (most important features)
-    for k in (1, 2, 4, 8, 12):
-        if f"price_lag_{k}" in MODEL_FEATURES:
+    # Latest macro & holiday indicators
+    if "fx_usd_gbp" in hist.columns:
+        row["fx_usd_gbp"] = hist["fx_usd_gbp"].iloc[-1]
+    if "brent_usd_bbl" in hist.columns:
+        row["brent_usd_bbl"] = hist["brent_usd_bbl"].iloc[-1]
+    if "is_holiday" in hist.columns:
+        row["is_holiday"] = int(hist["is_holiday"].iloc[-1])  # Ensure integer for categorical
+
+    # Price lags and rolling features
+    if "price_gbp_kg" in hist.columns:
+        for k in [1, 2, 4, 8, 12]:
             row[f"price_lag_{k}"] = safe_lag(hist["price_gbp_kg"], k)
+        row["price_roll_4"] = safe_tail_mean(hist["price_gbp_kg"], 4)
+
+    # Weather features - exact names from model
+    if "rain_sum" in hist.columns:
+        row["rain_sum"] = hist["rain_sum"].iloc[-1]
+        row["rain_sum_4"] = safe_tail_sum(hist["rain_sum"], 4)
+        row["rain_sum_8"] = safe_tail_sum(hist["rain_sum"], 8)
     
-    # Rolling statistics and weather
-    if "price_roll_4" in MODEL_FEATURES:
-        row["price_roll_4"] = hist["price_gbp_kg"].tail(4).mean() if len(hist) >= 4 else np.nan
-    
-    for w in (4, 8):
-        if f"rain_sum_{w}" in MODEL_FEATURES:
-            row[f"rain_sum_{w}"] = safe_tail_sum(hist["rain_sum"], w)
-        if f"sun_sum_{w}" in MODEL_FEATURES:
-            row[f"sun_sum_{w}"] = safe_tail_sum(hist["sun_sum"], w)
-    
-    # Latest weather metrics
-    if "tmax_mean" in MODEL_FEATURES:
+    if "sun_sum" in hist.columns:
+        row["sun_sum"] = hist["sun_sum"].iloc[-1]
+        row["sun_sum_4"] = safe_tail_sum(hist["sun_sum"], 4)
+        row["sun_sum_8"] = safe_tail_sum(hist["sun_sum"], 8)
+
+    # Temperature features
+    if "tmax_mean" in hist.columns:
         row["tmax_mean"] = hist["tmax_mean"].iloc[-1]
-    if "tmin_mean" in MODEL_FEATURES:
+    if "tmin_mean" in hist.columns:
         row["tmin_mean"] = hist["tmin_mean"].iloc[-1]
+
+    # Calendar features - ensure proper data types
+    last_date = hist.index[-1] if not isinstance(hist.index, pd.MultiIndex) \
+               else hist.index.get_level_values(-1)[-1]
+    last_date = pd.to_datetime(last_date)
     
-    # Calendar features
-    last_date = pd.to_datetime(hist.index[-1])
     week_no = last_date.isocalendar().week
-    if "week_num" in MODEL_FEATURES:
-        row["week_num"] = week_no
-    if "month" in MODEL_FEATURES:
-        row["month"] = last_date.month
-    if "sin_week" in MODEL_FEATURES:
-        row["sin_week"] = math.sin(2 * math.pi * week_no / 52)
-    if "cos_week" in MODEL_FEATURES:
-        row["cos_week"] = math.cos(2 * math.pi * week_no / 52)
+    row["week_num"] = int(week_no)  # Ensure integer for categorical
+    row["month"] = int(last_date.month)  # Ensure integer for categorical
+    row["sin_week"] = math.sin(2 * math.pi * week_no / 52)
+    row["cos_week"] = math.cos(2 * math.pi * week_no / 52)
     
-    # Align with training features and fill missing
-    return pd.Series(row).reindex(FEAT_COLS, fill_value=np.nan)
+    # Add commodity as categorical feature (very important!)
+    row["commodity"] = commodity_name.upper()
 
-def forecast(veg: str, horizon: int):
-    """Recursive multi-step forecasting"""
-    hist = BUFFER.xs(veg.upper()).copy()
-    preds = []
-
-    for _ in range(horizon):
-        feats = build_feature_row(hist, veg)  # Pass commodity
-        
-        # Fill NaNs with mean (if needed)
-        if feats.isna().any():
-            feats = feats.fillna(hist.mean())
-        
-        # FIX: Removed unnecessary parameters from predict()
-        log_pred = model.predict(feats.to_frame().T)[0]
-        price = round(math.exp(log_pred), 3)
-        preds.append(price)
-        
-        # Update history for next iteration
-        next_week = hist.index[-1] + timedelta(days=7)
-        pseudo = feats.to_frame().T.assign(price_gbp_kg=price)
-        pseudo.index = [next_week]
-        hist = pd.concat([hist, pseudo]).tail(MAX_LAG + 1)
+    # Create DataFrame with exact feature order matching model
+    expected_features = [
+        "price_lag_1", "price_lag_2", "price_lag_4", "tmax_mean", "tmin_mean",
+        "brent_usd_bbl", "fx_usd_gbp", "price_roll_4", "week_num", "month",
+        "price_lag_8", "price_lag_12", "rain_sum", "sun_sum", "rain_sum_4",
+        "rain_sum_8", "sun_sum_4", "sun_sum_8", "sin_week", "cos_week",
+        "is_holiday", "commodity"
+    ]
     
-    return preds, hist
+    # Use expected features if FEAT_COLS matches, otherwise use FEAT_COLS
+    feature_order = expected_features if set(expected_features).issubset(set(FEAT_COLS)) else FEAT_COLS
+    df = pd.DataFrame([row]).reindex(columns=feature_order, fill_value=0)
+    
+    # Ensure categorical columns have correct data types
+    categorical_cols = ["is_holiday", "week_num", "month", "commodity"]
+    for col in categorical_cols:
+        if col in df.columns:
+            if col == "commodity":
+                df[col] = df[col].astype('category')
+            else:
+                df[col] = df[col].astype('int32')
+    
+    return df
+
+
+def forecast_commodity(commodity: str, horizon: int):
+    """Generate price forecast for a commodity"""
+    try:
+        # Get historical data for the commodity
+        hist = BUFFER.xs(commodity.upper()).copy()
+        
+        if len(hist) == 0:
+            st.error(f"No historical data found for {commodity}")
+            return None, None
+        
+        preds = []
+        
+        for step in range(horizon):
+            # Build feature vector (returns DataFrame now)
+            feats_df = build_feature_row(hist, commodity)
+            
+            # Make prediction (log price)
+            log_pred = model.predict(feats_df)[0]
+            price = round(math.exp(log_pred), 3)
+            preds.append(price)
+            
+            # Create pseudo row for next iteration
+            next_week = hist.index[-1] + timedelta(days=7)
+            
+            # Build new row with predicted price - use all original columns structure
+            new_row_data = hist.iloc[-1:].copy()
+            new_row_data.index = [next_week]
+            new_row_data["price_gbp_kg"] = price
+            
+            # Update time-dependent features for the new row
+            week_no = next_week.isocalendar().week
+            if "week_num" in new_row_data.columns:
+                new_row_data["week_num"] = int(week_no)
+            if "month" in new_row_data.columns:
+                new_row_data["month"] = int(next_week.month)
+            if "sin_week" in new_row_data.columns:
+                new_row_data["sin_week"] = math.sin(2 * math.pi * week_no / 52)
+            if "cos_week" in new_row_data.columns:
+                new_row_data["cos_week"] = math.cos(2 * math.pi * week_no / 52)
+            
+            # Update weather features (assume they stay constant for forecast)
+            # This is a simplification - in reality, you'd want weather forecasts
+            
+            # Add to history
+            hist = pd.concat([hist, new_row_data]).tail(MAX_LAG + 1)
+        
+        return preds, hist
+        
+    except Exception as e:
+        st.error(f"Error during forecasting: {str(e)}")
+        return None, None
 
 # ─────────────────────────────────────────────
 # STREAMLIT UI
 # ─────────────────────────────────────────────
 st.title("🇬🇧 UK Vegetable Price Forecaster")
+st.markdown("Forecast UK vegetable prices using machine learning")
 
-# Sidebar configuration
-st.sidebar.header("Configuration")
-veg_list = sorted(BUFFER.index.get_level_values(0).unique())
-veg = st.sidebar.selectbox("Vegetable", veg_list)
-horizon = st.sidebar.slider("Forecast Horizon (weeks)", 1, 4, 1)
+# Load assets
+model, FEAT_COLS, BUFFER = load_assets()
 
-# Main content
-if st.sidebar.button("Generate Forecast"):
+if model is None or FEAT_COLS is None or BUFFER is None:
+    st.error("Failed to load model or data. Please check file paths.")
+    st.stop()
+
+# Get available commodities
+try:
+    available_commodities = sorted(BUFFER.index.get_level_values(0).unique())
+    
+    if len(available_commodities) == 0:
+        st.error("No commodities found in the data")
+        st.stop()
+        
+except Exception as e:
+    st.error(f"Error loading commodities: {str(e)}")
+    st.stop()
+
+# UI Controls
+col1, col2 = st.columns(2)
+
+with col1:
+    selected_commodity = st.selectbox(
+        "Choose a vegetable/commodity", 
+        available_commodities,
+        help="Select the commodity you want to forecast"
+    )
+
+with col2:
+    forecast_horizon = st.slider(
+        "Forecast horizon (weeks)", 
+        min_value=1, 
+        max_value=12, 
+        value=4,
+        help="Number of weeks to forecast ahead"
+    )
+
+# Generate forecast button
+if st.button("Generate Forecast", type="primary"):
     with st.spinner("Generating forecast..."):
-        try:
-            preds, hist = forecast(veg, horizon)
-            
-            # Display results
-            st.subheader(f"{veg.title()} Price Forecast")
-            st.json({f"Week {i+1}": f"£{p:.2f}" for i, p in enumerate(preds)})
-            
-            # Create visualization
-            hist_df = hist.reset_index()[["week_ending", "price_gbp_kg"]]
-            fut_df = pd.DataFrame({
-                "week_ending": [hist.index[-1] + timedelta(days=7*(i+1)) for i in range(horizon)],
-                "price_gbp_kg": preds,
-                "type": "Forecast"
-            })
-            hist_df["type"] = "History"
-            
-            chart_df = pd.concat([hist_df, fut_df])
-            
-            chart = alt.Chart(chart_df).mark_line(point=True).encode(
-                x=alt.X("week_ending:T", title="Week Ending"),
-                y=alt.Y("price_gbp_kg:Q", title="Price (£/kg)"),
-                color=alt.Color("type:N", 
-                               scale=alt.Scale(
-                                   domain=["History", "Forecast"],
-                                   range=[COLOR_HIST, COLOR_FORE]
-                               )),
-                tooltip=["week_ending", "price_gbp_kg", "type"]
-            ).properties(width=700)
-            
-            st.altair_chart(chart, use_container_width=True)
-            
-        except Exception as e:
-            st.error(f"Error generating forecast: {str(e)}")
+        predictions, history = forecast_commodity(selected_commodity, forecast_horizon)
+    
+    if predictions is not None and history is not None:
+        # Display results
+        st.subheader(f"📈 {selected_commodity.title()} Price Forecast")
+        
+        # Show predictions in a nice format
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("**Predicted Prices (£/kg):**")
+            for i, pred in enumerate(predictions):
+                st.metric(f"Week +{i+1}", f"£{pred:.3f}")
+        
+        with col2:
+            # Calculate percentage changes
+            if len(predictions) > 1:
+                st.markdown("**Week-on-Week Change:**")
+                for i in range(1, len(predictions)):
+                    change = ((predictions[i] - predictions[i-1]) / predictions[i-1]) * 100
+                    st.metric(f"Week +{i+1}", f"{change:+.1f}%")
+        
+        # Visualization
+        st.subheader("📊 Price Trend Visualization")
+        
+        # Prepare data for plotting
+        hist_df = history.reset_index()
+        hist_df = hist_df[hist_df['price_gbp_kg'].notna()].copy()
+        
+        # Create future dates
+        last_date = history.index[-len(predictions)-1]  # Get last historical date
+        future_dates = [last_date + timedelta(days=7*(i+1)) for i in range(forecast_horizon)]
+        
+        future_df = pd.DataFrame({
+            "week_ending": future_dates,
+            "price_gbp_kg": predictions,
+            "type": "Forecast"
+        })
+        
+        hist_df["type"] = "Historical"
+        
+        # Combine data
+        plot_data = pd.concat([
+            hist_df[["week_ending", "price_gbp_kg", "type"]].tail(20),  # Last 20 historical points
+            future_df
+        ]).reset_index(drop=True)
+        
+        # Create Altair chart
+        chart = alt.Chart(plot_data).mark_line(point=True, strokeWidth=3).encode(
+            x=alt.X("week_ending:T", title="Week Ending", axis=alt.Axis(format="%b %Y")),
+            y=alt.Y("price_gbp_kg:Q", title="Price (£/kg)", scale=alt.Scale(zero=False)),
+            color=alt.Color(
+                "type:N", 
+                scale=alt.Scale(domain=["Historical", "Forecast"], range=[COLOR_HIST, COLOR_FORE]),
+                legend=alt.Legend(title="Data Type")
+            ),
+            tooltip=["week_ending:T", "price_gbp_kg:Q", "type:N"]
+        ).properties(
+            width=700,
+            height=400,
+            title=f"{selected_commodity.title()} Price Trend"
+        )
+        
+        st.altair_chart(chart, use_container_width=True)
+        
+        # Show some statistics
+        st.subheader("📋 Forecast Summary")
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("Average Price", f"£{np.mean(predictions):.3f}")
+        with col2:
+            st.metric("Min Price", f"£{np.min(predictions):.3f}")
+        with col3:
+            st.metric("Max Price", f"£{np.max(predictions):.3f}")
+        with col4:
+            price_range = np.max(predictions) - np.min(predictions)
+            st.metric("Price Range", f"£{price_range:.3f}")
 
-# Footer information
-st.markdown("---")
-st.caption("Model: LightGBM Regressor with log-transformed target")
-st.caption("Features include price lags, weather data, macroeconomic indicators, and calendar features")
-st.caption("Data covers June 2018 to December 2024")
+# Information section
+with st.expander("ℹ️ About this forecaster"):
+    st.markdown("""
+    **Model Details:**
+    - **Algorithm**: LightGBM Gradient Boosting (100 trees, 127 max leaves)
+    - **Learning Rate**: 0.1 with 90% feature/sample subsampling
+    - **Key Features**: Price lags (1,2,4,8,12 weeks), temperature, oil prices, FX rates
+    - **Top Predictors**: Recent price history, weather patterns, commodity type
+    
+    **Feature Importance Ranking:**
+    1. price_lag_1 (most recent price)
+    2. price_lag_2, price_lag_4 (short-term trends)  
+    3. tmax_mean, tmin_mean (temperature effects)
+    4. brent_usd_bbl, fx_usd_gbp (economic factors)
+    5. Seasonal patterns (week_num, month, sin/cos_week)
+    
+    **Data Coverage:** June 2018 → December 2024 (weekly frequency)
+    
+    **Limitations:**
+    - Weather features held constant during forecast (no weather predictions)
+    - Economic indicators (oil, FX) use last known values
+    - Model assumes historical patterns continue
+    """)
+
+st.caption("🔬 Model: LightGBM with extended lags & weather features | 📅 Data: Jun 2018 → Dec 2024")
