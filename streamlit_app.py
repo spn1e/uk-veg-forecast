@@ -46,16 +46,29 @@ def load_assets():
     )
 
     # Model expects these exact features based on your analysis
-    expected_features = [
-        "price_lag_1", "price_lag_2", "price_lag_4", "tmax_mean", "tmin_mean",
-        "brent_usd_bbl", "fx_usd_gbp", "price_roll_4", "week_num", "month",
-        "price_lag_8", "price_lag_12", "rain_sum", "sun_sum", "rain_sum_4",
-        "rain_sum_8", "sun_sum_4", "sun_sum_8", "sin_week", "cos_week",
-        "is_holiday", "commodity"
-    ]
-    
-    # Use expected features as the definitive list
-    feat_cols = expected_features
+    # But we need to get the actual feature names from the trained model
+    try:
+        # Try to get feature names from the model if available
+        if hasattr(model, 'feature_name_'):
+            feat_cols = model.feature_name_
+            st.write(f"Debug: Model expects {len(feat_cols)} features: {feat_cols}")
+        else:
+            # Fallback to discovering from data structure
+            drop_cols = {"commodity", "week_ending", "price_gbp_kg", "log_price"}
+            available_cols = [c for c in df.columns if c not in drop_cols]
+            # Add commodity back as it's needed for prediction
+            feat_cols = available_cols + ["commodity"] if "commodity" not in available_cols else available_cols
+            st.write(f"Debug: Inferred {len(feat_cols)} features from data: {feat_cols}")
+    except Exception as e:
+        st.error(f"Error determining features: {e}")
+        # Fallback to original expected features
+        feat_cols = [
+            "price_lag_1", "price_lag_2", "price_lag_4", "tmax_mean", "tmin_mean",
+            "brent_usd_bbl", "fx_usd_gbp", "price_roll_4", "week_num", "month",
+            "price_lag_8", "price_lag_12", "rain_sum", "sun_sum", "rain_sum_4",
+            "rain_sum_8", "sun_sum_4", "sun_sum_8", "sin_week", "cos_week",
+            "is_holiday", "commodity"
+        ]
     
     return model, feat_cols, buffer
 
@@ -127,18 +140,14 @@ def build_feature_row(hist: pd.DataFrame, commodity_name: str) -> pd.DataFrame:
     # Add commodity as categorical feature (very important!)
     row["commodity"] = commodity_name.upper()
 
-    # Create DataFrame with exact feature order matching model
-    expected_features = [
-        "price_lag_1", "price_lag_2", "price_lag_4", "tmax_mean", "tmin_mean",
-        "brent_usd_bbl", "fx_usd_gbp", "price_roll_4", "week_num", "month",
-        "price_lag_8", "price_lag_12", "rain_sum", "sun_sum", "rain_sum_4",
-        "rain_sum_8", "sun_sum_4", "sun_sum_8", "sin_week", "cos_week",
-        "is_holiday", "commodity"
-    ]
+    # Create DataFrame using the actual FEAT_COLS from the loaded model
+    # This ensures we match exactly what the model expects
+    df = pd.DataFrame([row]).reindex(columns=FEAT_COLS, fill_value=0)
     
-    # Use expected features if FEAT_COLS matches, otherwise use FEAT_COLS
-    feature_order = expected_features if set(expected_features).issubset(set(FEAT_COLS)) else FEAT_COLS
-    df = pd.DataFrame([row]).reindex(columns=feature_order, fill_value=0)
+    # Debug: Print feature count and names (remove this after fixing)
+    st.write(f"Debug: Features provided: {len(df.columns)}")
+    st.write(f"Debug: Feature names: {list(df.columns)}")
+    st.write(f"Debug: Expected count: 23")
     
     # Ensure categorical columns have correct data types
     categorical_cols = ["is_holiday", "week_num", "month", "commodity"]
@@ -168,8 +177,18 @@ def forecast_commodity(commodity: str, horizon: int):
             # Build feature vector (returns DataFrame now)
             feats_df = build_feature_row(hist, commodity)
             
-            # Make prediction (log price)
-            log_pred = model.predict(feats_df)[0]
+            # Make prediction (log price) with shape check disabled as fallback
+            try:
+                log_pred = model.predict(feats_df)[0]
+            except Exception as shape_error:
+                st.warning(f"Shape mismatch detected: {shape_error}")
+                # Try with shape check disabled
+                try:
+                    log_pred = model.predict(feats_df, predict_disable_shape_check=True)[0]
+                    st.info("Used predict_disable_shape_check=True to bypass shape mismatch")
+                except Exception as e:
+                    st.error(f"Prediction failed even with shape check disabled: {e}")
+                    return None, None
             price = round(math.exp(log_pred), 3)
             preds.append(price)
             
@@ -247,6 +266,31 @@ with col2:
         value=4,
         help="Number of weeks to forecast ahead"
     )
+
+if st.button("🔍 Debug Model Features", help="Show model feature information"):
+    st.subheader("Model Feature Analysis")
+    
+    # Try to extract feature information from the model
+    try:
+        if hasattr(model, 'feature_name_'):
+            model_features = model.feature_name_
+            st.write(f"**Model expects {len(model_features)} features:**")
+            for i, feat in enumerate(model_features):
+                st.write(f"{i+1}. {feat}")
+        else:
+            st.write("Model feature names not accessible")
+        
+        # Show what we can build from sample data
+        if len(available_commodities) > 0:
+            sample_commodity = available_commodities[0]
+            sample_hist = BUFFER.xs(sample_commodity.upper()).copy()
+            sample_features = build_feature_row(sample_hist, sample_commodity)
+            st.write(f"**We can build {len(sample_features.columns)} features:**")
+            for i, feat in enumerate(sample_features.columns):
+                st.write(f"{i+1}. {feat}")
+                
+    except Exception as e:
+        st.error(f"Debug error: {e}")
 
 # Generate forecast button
 if st.button("Generate Forecast", type="primary"):
