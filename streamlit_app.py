@@ -395,7 +395,7 @@ if st.button("Generate Forecast", type="primary"):
             ]).reset_index(drop=True)
         else:
             st.error(f"Missing required columns. Available: {list(hist_df.columns)}")
-            return
+            st.stop()
         
         # Create Altair chart
         chart = alt.Chart(plot_data).mark_line(point=True, strokeWidth=3).encode(
