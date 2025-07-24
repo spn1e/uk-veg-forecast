@@ -1140,212 +1140,160 @@ st.markdown("---")
 
 with st.expander("🚀 New Features & Setup Guide"):
     st.markdown("""
-    ## 🆕 Enhanced Features Added:
-    
-    ### 1. 🧠 Semantic RAG with MiniLM Embeddings
-    - **Vector Store**: FAISS-powered semantic search
-    - **Embeddings**: sentence-transformers all-MiniLM-L6-v2
-    - **Knowledge Base**: Enhanced with quantitative market intelligence
-    - **Search Quality**: Much better context retrieval than keyword matching
-    
-    ### 2. 📈 Baseline Model Comparison  
-    - **AutoARIMA**: Automatic ARIMA with seasonal patterns
-    - **AutoETS**: Exponential smoothing with trend/seasonality
-    - **Comparison Charts**: Side-by-side model performance
-    - **Performance Metrics**: Volatility and average price comparisons
-    
-    ### 3. 📁 CSV Upload & Model Retraining
-    - **Data Upload**: CSV/Excel file support with validation
-    - **Real-time Retraining**: Retrain LightGBM with new data
-    - **Model Versioning**: Compare original vs retrained models
-    - **Data Requirements**: Minimum 50 records, required columns validated
-    
-    ### 4. 🎯 Enhanced AI Assistant
-    - **Confidence Intervals**: Uncertainty quantification in forecasts
-    - **Model Explanations**: Detailed technical analysis capabilities
-    - **Trading Strategies**: Advanced quantitative trading advice
-    - **Risk Assessment**: Comprehensive uncertainty analysis
-    
-    ## 📦 Installation Requirements:
-    
-    ```bash
-    # Core requirements (existing)
-    pip install streamlit pandas numpy joblib altair anthropic requests
-    
-    # New enhanced features
-    pip install sentence-transformers  # Semantic embeddings
-    pip install faiss-cpu             # Vector search (or faiss-gpu for GPU)
-    pip install statsforecast         # Baseline models (AutoARIMA, AutoETS)
-    pip install lightgbm             # For model retraining
-    ```
-    
-    ## 🔧 Configuration:
-    
-    **Streamlit Secrets (.streamlit/secrets.toml):**
-    ```toml
-    # Choose API provider
-    USE_OPENROUTER = "true"
-    OPENROUTER_API_KEY = "sk-or-v1-xxxxx"
-    
-    # OR
-    # USE_OPENROUTER = "false"
-    # ANTHROPIC_API_KEY = "sk-ant-xxxxx"
-    ```
-    
-    ## 🎯 Feature Status & Fallbacks:
-    
-    | Feature | Status | Fallback |
-    |---------|--------|----------|
-    | Semantic RAG | ✅/❌ | Keyword search if embeddings unavailable |
-    | FAISS Search | ✅/❌ | Simple similarity if FAISS unavailable |
-    | Baseline Models | ✅/❌ | LightGBM only if StatsForecast unavailable |
-    | Model Retraining | ✅ | Always available with LightGBM |
-    
-    ## 🔬 Advanced Usage:
-    
-    ### Local Llama 3 Integration (Future Enhancement):
-    ```python
-    # For fine-tuning local Llama 3 with LoRA (conceptual)
-    from transformers import AutoModelForCausalLM, AutoTokenizer
-    from peft import LoraConfig, get_peft_model
-    
-    # This would require:
-    # 1. Agricultural domain dataset preparation
-    # 2. LoRA fine-tuning setup
-    # 3. Local inference integration
-    # 4. Significant computational resources
-    ```
-    
-    ### Custom Vector Store:
-    ```python
-    # You can extend SemanticVectorStore for custom embeddings
-    class CustomVectorStore(SemanticVectorStore):
-        def __init__(self, custom_model_path):
-            # Load your custom trained embeddings
-            super().__init__(model_name=custom_model_path)
-    ```
-    
-    ## 🚀 Performance Optimizations:
-    
-    - **FAISS GPU**: Use faiss-gpu for faster similarity search on large knowledge bases
-    - **Model Caching**: Embeddings and models are cached in session state
-    - **Batch Processing**: Upload large datasets for efficient retraining
-    - **Memory Management**: FAISS indices are rebuilt intelligently
-    
-    ## 📊 Model Comparison Guidelines:
-    
-    - **LightGBM**: Best for 1-4 week forecasts with complex features
-    - **AutoARIMA**: Good for longer trends, handles seasonality well  
-    - **AutoETS**: Excellent for stable seasonal patterns
-    - **Ensemble**: Consider averaging predictions for robustness
-    
-    ## ⚠️ Known Limitations:
-    
-    - **Retraining Speed**: Large datasets may take 2-5 minutes to retrain
-    - **Memory Usage**: FAISS indices require RAM (approx 1MB per 1000 documents)
-    - **GPU Support**: FAISS-GPU requires CUDA-compatible GPU
-    - **Model Size**: Sentence transformers models are ~80-400MB
+## 🆕 Enhanced Features Added:
+
+### 1. 🧠 Semantic RAG with MiniLM Embeddings
+- **Vector Store**: FAISS-powered semantic search
+- **Embeddings**: sentence-transformers all-MiniLM-L6-v2
+- **Knowledge Base**: Enhanced with quantitative market intelligence
+- **Search Quality**: Much better context retrieval than keyword matching
+
+### 2. 📈 Baseline Model Comparison  
+- **AutoARIMA**: Automatic ARIMA with seasonal patterns
+- **AutoETS**: Exponential smoothing with trend/seasonality
+- **Comparison Charts**: Side-by-side model performance
+- **Performance Metrics**: Volatility and average price comparisons
+
+### 3. 📁 CSV Upload & Model Retraining
+- **Data Upload**: CSV/Excel file support with validation
+- **Real-time Retraining**: Retrain LightGBM with new data
+- **Model Versioning**: Compare original vs retrained models
+- **Data Requirements**: Minimum 50 records, required columns validated
+
+### 4. 🎯 Enhanced AI Assistant
+- **Confidence Intervals**: Uncertainty quantification in forecasts
+- **Model Explanations**: Detailed technical analysis capabilities
+- **Trading Strategies**: Advanced quantitative trading advice
+- **Risk Assessment**: Comprehensive uncertainty analysis
+
+## 📦 Installation Requirements:
+
+Core requirements (existing):
+- streamlit pandas numpy joblib altair anthropic requests
+
+New enhanced features:
+- sentence-transformers (Semantic embeddings)
+- faiss-cpu (Vector search, or faiss-gpu for GPU)
+- statsforecast (Baseline models AutoARIMA, AutoETS)
+- lightgbm (For model retraining)
+
+## 🔧 Configuration:
+
+Streamlit Secrets (.streamlit/secrets.toml):
+- USE_OPENROUTER = "true"
+- OPENROUTER_API_KEY = "sk-or-v1-xxxxx"
+
+OR:
+- USE_OPENROUTER = "false"  
+- ANTHROPIC_API_KEY = "sk-ant-xxxxx"
+
+## 🎯 Feature Status & Fallbacks:
+
+| Feature | Status | Fallback |
+|---------|--------|----------|
+| Semantic RAG | ✅/❌ | Keyword search if embeddings unavailable |
+| FAISS Search | ✅/❌ | Simple similarity if FAISS unavailable |
+| Baseline Models | ✅/❌ | LightGBM only if StatsForecast unavailable |
+| Model Retraining | ✅ | Always available with LightGBM |
+
+## 🚀 Performance Optimizations:
+
+- **FAISS GPU**: Use faiss-gpu for faster similarity search on large knowledge bases
+- **Model Caching**: Embeddings and models are cached in session state
+- **Batch Processing**: Upload large datasets for efficient retraining
+- **Memory Management**: FAISS indices are rebuilt intelligently
+
+## 📊 Model Comparison Guidelines:
+
+- **LightGBM**: Best for 1-4 week forecasts with complex features
+- **AutoARIMA**: Good for longer trends, handles seasonality well  
+- **AutoETS**: Excellent for stable seasonal patterns
+- **Ensemble**: Consider averaging predictions for robustness
+
+## ⚠️ Known Limitations:
+
+- **Retraining Speed**: Large datasets may take 2-5 minutes to retrain
+- **Memory Usage**: FAISS indices require RAM (approx 1MB per 1000 documents)
+- **GPU Support**: FAISS-GPU requires CUDA-compatible GPU
+- **Model Size**: Sentence transformers models are ~80-400MB
     """)
 
 with st.expander("🧪 Experimental Features (Future Roadmap)"):
     st.markdown("""
-    ## 🔮 Planned Enhancements:
-    
-    ### 1. 🦙 Local Llama 3 Fine-tuning
-    ```bash
-    # Future implementation concept
-    pip install transformers accelerate bitsandbytes peft
-    
-    # Agricultural domain fine-tuning pipeline:
-    # 1. Curate UK agriculture/commodity trading dataset
-    # 2. Format for instruction-following (chat templates)
-    # 3. Apply LoRA (Low-Rank Adaptation) for efficient fine-tuning
-    # 4. Integrate with local inference endpoint
-    ```
-    
-    **Benefits:**
-    - No API costs for inference
-    - Complete data privacy
-    - Domain-specific agricultural knowledge
-    - Customizable for specific trading strategies
-    
-    **Requirements:**
-    - GPU with 16GB+ VRAM (RTX 4090, A100)
-    - Agricultural domain dataset (10K+ examples)
-    - Fine-tuning infrastructure (could use Modal, RunPod)
-    
-    ### 2. 🌐 Real-time Data Integration
-    ```python
-    # Conceptual real-time data feeds
-    class RealTimeDataFeed:
-        def __init__(self):
-            self.weather_api = WeatherAPI()
-            self.commodity_api = CommodityPricesAPI()
-            self.news_api = AgricultureNewsAPI()
-        
-        def update_features(self):
-            # Pull latest weather, prices, news sentiment
-            # Update model features in real-time
-            pass
-    ```
-    
-    ### 3. 🎯 Advanced Risk Models
-    - **VaR Calculations**: Portfolio Value-at-Risk for vegetable positions  
-    - **Monte Carlo**: Simulate thousands of price scenarios
-    - **Stress Testing**: Model performance under extreme weather events
-    - **Correlation Analysis**: Cross-commodity risk assessment
-    
-    ### 4. 📱 Mobile Dashboard
-    - **Progressive Web App**: Mobile-optimized interface
-    - **Push Notifications**: Price alerts and forecast updates
-    - **Offline Mode**: Download forecasts for offline viewing
-    - **GPS Integration**: Location-based market insights
-    
-    ### 5. 🤖 Multi-Agent System
-    ```python
-    # Conceptual multi-agent architecture
-    class MarketAnalysisAgents:
-        def __init__(self):
-            self.weather_agent = WeatherAnalystAgent()
-            self.price_agent = PriceForecasterAgent()  
-            self.news_agent = NewsSentimentAgent()
-            self.trading_agent = TradingStrategyAgent()
-        
-        def collaborative_analysis(self, query):
-            # Agents collaborate to provide comprehensive analysis
-            pass
-    ```
-    
-    ## 🛠️ Implementation Priorities:
-    
-    1. **Phase 1** (Current): Semantic RAG + Baseline Models ✅
-    2. **Phase 2** (Next): Real-time data feeds + Advanced risk models
-    3. **Phase 3** (Future): Local Llama fine-tuning + Multi-agent systems
-    4. **Phase 4** (Long-term): Mobile app + Enterprise features
-    
-    ## 💡 Contributing Ideas:
-    
-    - **Data Sources**: Suggest new data feeds (weather, economic, news)
-    - **Model Improvements**: Alternative forecasting algorithms
-    - **UI/UX**: Interface improvements and new visualizations
-    - **Domain Expertise**: Agricultural/trading knowledge contributions
-    
-    ## 🎓 Learning Resources:
-    
-    - **Time Series**: StatsForecast documentation
-    - **Vector Search**: FAISS tutorials and benchmarks  
-    - **Fine-tuning**: Hugging Face LoRA guides
-    - **Agricultural Data**: UK government agricultural statistics
+## 🔮 Planned Enhancements:
+
+### 1. 🦙 Local Llama 3 Fine-tuning
+
+Future implementation concept:
+- Agricultural domain fine-tuning pipeline
+- LoRA (Low-Rank Adaptation) for efficient fine-tuning
+- Local inference integration
+- Significant computational resources required
+
+**Benefits:**
+- No API costs for inference
+- Complete data privacy
+- Domain-specific agricultural knowledge
+- Customizable for specific trading strategies
+
+**Requirements:**
+- GPU with 16GB+ VRAM (RTX 4090, A100)
+- Agricultural domain dataset (10K+ examples)
+- Fine-tuning infrastructure (could use Modal, RunPod)
+
+### 2. 🌐 Real-time Data Integration
+
+Conceptual real-time data feeds:
+- Weather API integration
+- Commodity prices API
+- Agriculture news API
+- Update model features in real-time
+
+### 3. 🎯 Advanced Risk Models
+- **VaR Calculations**: Portfolio Value-at-Risk for vegetable positions  
+- **Monte Carlo**: Simulate thousands of price scenarios
+- **Stress Testing**: Model performance under extreme weather events
+- **Correlation Analysis**: Cross-commodity risk assessment
+
+### 4. 📱 Mobile Dashboard
+- **Progressive Web App**: Mobile-optimized interface
+- **Push Notifications**: Price alerts and forecast updates
+- **Offline Mode**: Download forecasts for offline viewing
+- **GPS Integration**: Location-based market insights
+
+### 5. 🤖 Multi-Agent System
+
+Conceptual multi-agent architecture:
+- Weather analyst agent
+- Price forecaster agent
+- News sentiment agent
+- Trading strategy agent
+- Collaborative analysis capabilities
+
+## 🛠️ Implementation Priorities:
+
+1. **Phase 1** (Current): Semantic RAG + Baseline Models ✅
+2. **Phase 2** (Next): Real-time data feeds + Advanced risk models
+3. **Phase 3** (Future): Local Llama fine-tuning + Multi-agent systems
+4. **Phase 4** (Long-term): Mobile app + Enterprise features
+
+## 💡 Contributing Ideas:
+
+- **Data Sources**: Suggest new data feeds (weather, economic, news)
+- **Model Improvements**: Alternative forecasting algorithms
+- **UI/UX**: Interface improvements and new visualizations
+- **Domain Expertise**: Agricultural/trading knowledge contributions
+
+## 🎓 Learning Resources:
+
+- **Time Series**: StatsForecast documentation
+- **Vector Search**: FAISS tutorials and benchmarks  
+- **Fine-tuning**: Hugging Face LoRA guides
+- **Agricultural Data**: UK government agricultural statistics
     """)
 
 st.markdown("---")
-st.caption("""
-🔬 **Enhanced Model Stack**: LightGBM + AutoARIMA + AutoETS + Claude 3.5 Sonnet  
-🧠 **Semantic RAG**: MiniLM embeddings + FAISS vector search  
-📅 **Training Data**: June 2018 - December 2024 + User uploads  
-🎯 **Optimized for**: Multi-horizon forecasting with confidence intervals + Real-time retraining  
-⚡ **New Capabilities**: Baseline comparisons + CSV upload + Enhanced AI assistant
-""") = hist.iloc[-1:].copy()
+st.caption("🔬 Enhanced Model Stack: LightGBM + AutoARIMA + AutoETS + Claude 3.5 Sonnet | 🧠 Semantic RAG: MiniLM embeddings + FAISS vector search | 📅 Training Data: June 2018 - December 2024 + User uploads | 🎯 Optimized for: Multi-horizon forecasting with confidence intervals + Real-time retraining | ⚡ New Capabilities: Baseline comparisons + CSV upload + Enhanced AI assistant") = hist.iloc[-1:].copy()
                         new_row.index = [next_week]
                         new_row["price_gbp_kg"] = price
                         hist = pd.concat([hist, new_row]).tail(12)
