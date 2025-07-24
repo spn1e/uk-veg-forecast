@@ -1227,7 +1227,7 @@ with st.expander("🚀 New Features & Setup Guide"):
     
     ## 🚀 Performance Optimizations:
     
-    - **FAISS GPU**: Use `faiss-gpu` for faster similarity search on large knowledge bases
+    - **FAISS GPU**: Use faiss-gpu for faster similarity search on large knowledge bases
     - **Model Caching**: Embeddings and models are cached in session state
     - **Batch Processing**: Upload large datasets for efficient retraining
     - **Memory Management**: FAISS indices are rebuilt intelligently
