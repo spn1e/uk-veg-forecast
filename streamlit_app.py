@@ -13,7 +13,7 @@ import io
 import pickle
 from pathlib import Path
 
-# New imports for enhanced features
+# Optional imports
 try:
     from sentence_transformers import SentenceTransformer
     EMBEDDINGS_AVAILABLE = True
@@ -36,9 +36,6 @@ except ImportError:
     STATSFORECAST_AVAILABLE = False
     st.warning("StatsForecast not available. Install with: pip install statsforecast")
 
-# ─────────────────────────────────────────────
-# ENHANCED SEMANTIC VECTOR STORE
-# ─────────────────────────────────────────────
 class SemanticVectorStore:
     def __init__(self, model_name="all-MiniLM-L6-v2", use_faiss=True):
         self.use_faiss = use_faiss and FAISS_AVAILABLE
@@ -53,18 +50,16 @@ class SemanticVectorStore:
                 self.use_embeddings = False
         
         if self.use_faiss and self.use_embeddings:
-            self.index = faiss.IndexFlatIP(self.embedding_dim)  # Inner product for cosine similarity
+            self.index = faiss.IndexFlatIP(self.embedding_dim)
         
         self.documents = []
         self.ids = []
         self.metadatas = []
         self.embeddings = []
         
-        # Load from session state if available
         self._load_from_session()
     
     def _load_from_session(self):
-        """Load vector store from session state"""
         if 'semantic_vector_store_data' in st.session_state:
             data = st.session_state.semantic_vector_store_data
             self.documents = data.get('documents', [])
@@ -72,18 +67,15 @@ class SemanticVectorStore:
             self.metadatas = data.get('metadatas', [])
             self.embeddings = data.get('embeddings', [])
             
-            # Rebuild FAISS index if we have embeddings
             if self.use_faiss and self.embeddings:
                 try:
                     embeddings_array = np.array(self.embeddings).astype('float32')
-                    # Normalize embeddings for cosine similarity
                     faiss.normalize_L2(embeddings_array)
                     self.index.add(embeddings_array)
                 except Exception as e:
                     st.error(f"Failed to rebuild FAISS index: {e}")
     
     def _save_to_session(self):
-        """Save vector store to session state"""
         st.session_state.semantic_vector_store_data = {
             'documents': self.documents,
             'ids': self.ids,
@@ -92,13 +84,11 @@ class SemanticVectorStore:
         }
     
     def add(self, documents, metadatas=None, ids=None):
-        """Add documents with semantic embeddings"""
         if metadatas is None:
             metadatas = [{}] * len(documents)
         if ids is None:
             ids = [f"doc_{len(self.ids) + i}" for i in range(len(documents))]
         
-        # Generate embeddings if available
         new_embeddings = []
         if self.use_embeddings:
             try:
@@ -107,17 +97,15 @@ class SemanticVectorStore:
                 st.error(f"Failed to generate embeddings: {e}")
                 return
         
-        # Add to storage
         self.documents.extend(documents)
         self.metadatas.extend(metadatas)
         self.ids.extend(ids)
         self.embeddings.extend(new_embeddings)
         
-        # Add to FAISS index
         if self.use_faiss and new_embeddings:
             try:
                 embeddings_array = np.array(new_embeddings).astype('float32')
-                faiss.normalize_L2(embeddings_array)  # Normalize for cosine similarity
+                faiss.normalize_L2(embeddings_array)
                 self.index.add(embeddings_array)
             except Exception as e:
                 st.error(f"Failed to add to FAISS index: {e}")
@@ -125,7 +113,6 @@ class SemanticVectorStore:
         self._save_to_session()
     
     def query(self, query_texts, n_results=10):
-        """Semantic similarity search"""
         if not self.documents or not query_texts:
             return {"documents": [[]], "metadatas": [[]]}
         
@@ -133,15 +120,12 @@ class SemanticVectorStore:
         
         if self.use_embeddings and self.use_faiss:
             try:
-                # Generate query embedding
                 query_embedding = self.encoder.encode([query_text])
                 query_embedding = query_embedding.astype('float32')
                 faiss.normalize_L2(query_embedding)
                 
-                # Search FAISS index
                 scores, indices = self.index.search(query_embedding, min(n_results, len(self.documents)))
                 
-                # Filter valid indices
                 valid_indices = [idx for idx in indices[0] if idx != -1]
                 
                 return {
@@ -151,11 +135,9 @@ class SemanticVectorStore:
             except Exception as e:
                 st.error(f"Semantic search failed: {e}")
         
-        # Fallback to keyword search
         return self._keyword_search(query_text, n_results)
     
     def _keyword_search(self, query_text, n_results):
-        """Fallback keyword-based search"""
         query_lower = query_text.lower()
         results = []
         
@@ -172,34 +154,27 @@ class SemanticVectorStore:
             "metadatas": [[self.metadatas[i] for i in top_indices]]
         }
 
-# ─────────────────────────────────────────────
-# BASELINE FORECASTING MODELS
-# ─────────────────────────────────────────────
 class BaselineForecaster:
     def __init__(self):
         self.models_available = STATSFORECAST_AVAILABLE
         
     def forecast_baselines(self, data: pd.DataFrame, commodity: str, horizon: int = 4):
-        """Generate baseline forecasts using AutoARIMA and AutoETS"""
         if not self.models_available:
             return None, "StatsForecast not available"
         
         try:
-            # Prepare data for StatsForecast
             ts_data = data.reset_index()
             ts_data = ts_data.rename(columns={'week_ending': 'ds', 'price_gbp_kg': 'y'})
             ts_data['unique_id'] = commodity.upper()
             ts_data = ts_data[['unique_id', 'ds', 'y']].copy()
             
-            # Remove any missing values
             ts_data = ts_data.dropna()
             
             if len(ts_data) < 10:
                 return None, "Insufficient data for baseline models"
             
-            # Initialize models
             models = [
-                AutoARIMA(season_length=52),  # Weekly seasonality
+                AutoARIMA(season_length=52),
                 AutoETS(season_length=52)
             ]
             
@@ -209,7 +184,6 @@ class BaselineForecaster:
                 n_jobs=1
             )
             
-            # Generate forecasts
             forecasts = sf.forecast(df=ts_data, h=horizon)
             
             return {
@@ -225,54 +199,43 @@ class BaselineForecaster:
         except Exception as e:
             return None, f"Baseline forecasting failed: {str(e)}"
 
-# ─────────────────────────────────────────────
-# MODEL RETRAINING FUNCTIONALITY
-# ─────────────────────────────────────────────
 class ModelRetrainer:
     def __init__(self):
         self.supported_formats = ['csv', 'xlsx', 'parquet']
     
     def validate_uploaded_data(self, df: pd.DataFrame) -> tuple[bool, str]:
-        """Validate uploaded CSV structure"""
         required_columns = ['commodity', 'week_ending', 'price_gbp_kg']
         
         if not all(col in df.columns for col in required_columns):
             missing = [col for col in required_columns if col not in df.columns]
             return False, f"Missing required columns: {missing}"
         
-        # Check data types
         try:
             df['week_ending'] = pd.to_datetime(df['week_ending'])
             df['price_gbp_kg'] = pd.to_numeric(df['price_gbp_kg'])
         except Exception as e:
             return False, f"Data type conversion failed: {str(e)}"
         
-        # Check for minimum data
         if len(df) < 50:
             return False, "Need at least 50 data points for retraining"
         
         return True, "Data validation successful"
     
     def retrain_model(self, new_data: pd.DataFrame, existing_model=None) -> tuple[Any, str]:
-        """Retrain model with new data"""
         try:
-            # This is a simplified retraining - in practice you'd want more sophisticated feature engineering
             from lightgbm import LGBMRegressor
             
-            # Prepare features (simplified version)
             features_df = self.prepare_features(new_data)
             
             if len(features_df) < 20:
                 return None, "Insufficient processed data for training"
             
-            # Separate features and target
             target_col = 'log_price'
             feature_cols = [col for col in features_df.columns if col != target_col and col != 'commodity']
             
             X = features_df[feature_cols]
             y = features_df[target_col]
             
-            # Train new model
             model = LGBMRegressor(
                 n_estimators=100,
                 num_leaves=127,
@@ -290,33 +253,24 @@ class ModelRetrainer:
             return None, f"Retraining failed: {str(e)}"
     
     def prepare_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Simplified feature preparation for retraining"""
         df = df.copy()
         df['week_ending'] = pd.to_datetime(df['week_ending'])
         df = df.sort_values(['commodity', 'week_ending'])
         
-        # Create log price target
         df['log_price'] = np.log(df['price_gbp_kg'])
         
-        # Create basic lag features
         df['price_lag_1'] = df.groupby('commodity')['price_gbp_kg'].shift(1)
         df['price_lag_2'] = df.groupby('commodity')['price_gbp_kg'].shift(2)
         
-        # Create basic time features
         df['week_num'] = df['week_ending'].dt.isocalendar().week
         df['month'] = df['week_ending'].dt.month
         
-        # Drop rows with missing lags
         df = df.dropna()
         
         return df
 
-# ─────────────────────────────────────────────
-# ENHANCED ASSISTANT WITH SEMANTIC RAG
-# ─────────────────────────────────────────────
 class EnhancedVegetableForecastAssistant:
     def __init__(self):
-        # Initialize API clients
         self.use_openrouter = st.secrets.get("USE_OPENROUTER", os.getenv("USE_OPENROUTER", "false")).lower() == "true"
         
         if self.use_openrouter:
@@ -332,16 +286,13 @@ class EnhancedVegetableForecastAssistant:
                 return
             self.claude_client = anthropic.Anthropic(api_key=anthropic_key)
         
-        # Initialize enhanced components
         self.vector_store = SemanticVectorStore()
         self.baseline_forecaster = BaselineForecaster()
         self.model_retrainer = ModelRetrainer()
         
-        # Setup knowledge base
         self.setup_enhanced_knowledge_base()
     
     def setup_enhanced_knowledge_base(self):
-        """Setup enhanced knowledge base with more detailed information"""
         knowledge_documents = [
             {
                 "id": "uk_vegetable_seasons_detailed",
@@ -478,7 +429,6 @@ class EnhancedVegetableForecastAssistant:
             }
         ]
         
-        # Add documents if vector store is empty
         try:
             if not self.vector_store.documents:
                 self.vector_store.add(
@@ -490,7 +440,6 @@ class EnhancedVegetableForecastAssistant:
             st.error(f"Enhanced knowledge base setup failed: {e}")
     
     def get_enhanced_context(self, query: str, n_results: int = 3) -> str:
-        """Retrieve relevant context using semantic similarity"""
         try:
             results = self.vector_store.query(
                 query_texts=[query],
@@ -506,7 +455,6 @@ class EnhancedVegetableForecastAssistant:
             return f"Context retrieval error: {e}"
     
     def generate_comparison_forecast(self, commodity: str, weeks: int = 4) -> Dict[str, Any]:
-        """Generate forecasts from multiple models for comparison"""
         try:
             results = {
                 'lightgbm': None,
@@ -514,7 +462,6 @@ class EnhancedVegetableForecastAssistant:
                 'comparison_data': None
             }
             
-            # Get LightGBM forecast (existing model)
             if 'model' in st.session_state and 'BUFFER' in st.session_state:
                 model = st.session_state.model
                 BUFFER = st.session_state.BUFFER
@@ -532,9 +479,165 @@ class EnhancedVegetableForecastAssistant:
                         price = round(math.exp(log_pred), 3)
                         predictions.append(price)
                         
-                        # Update history for next iteration
                         next_week = hist.index[-1] + timedelta(days=7)
+                        new_row = hist.iloc[-1:].copy()
+                        new_row.index = [next_week]
                         new_row["price_gbp_kg"] = price
+                        hist = pd.concat([hist, new_row]).tail(12)
+                    
+                    results['lightgbm'] = {
+                        'predictions': predictions,
+                        'model_name': 'LightGBM'
+                    }
+                    
+                    baseline_data, error = self.baseline_forecaster.forecast_baselines(
+                        BUFFER.xs(commodity.upper()), commodity, weeks
+                    )
+                    
+                    if baseline_data:
+                        results['baselines'] = baseline_data
+                        
+                        future_dates = baseline_data['dates']
+                        comparison_df = pd.DataFrame({
+                            'date': future_dates,
+                            'LightGBM': predictions,
+                            'AutoARIMA': baseline_data['AutoARIMA'],
+                            'AutoETS': baseline_data['AutoETS']
+                        })
+                        
+                        results['comparison_data'] = comparison_df
+            
+            return results
+            
+        except Exception as e:
+            return {'error': f"Comparison forecast failed: {str(e)}"}
+    
+    def chat_with_enhanced_claude(self, user_message: str, chat_history: List[Dict]) -> str:
+        try:
+            context = self.get_enhanced_context(user_message)
+            
+            forecast_result = None
+            if any(word in user_message.lower() for word in ['forecast', 'predict', 'price', 'compare']):
+                commodities = ['potato', 'carrot', 'onion', 'tomato', 'cucumber', 
+                             'lettuce', 'cabbage', 'broccoli', 'pepper', 'courgette']
+                mentioned_commodity = None
+                for commodity in commodities:
+                    if commodity in user_message.lower():
+                        mentioned_commodity = commodity
+                        break
+                
+                if mentioned_commodity:
+                    if 'compare' in user_message.lower() or 'baseline' in user_message.lower():
+                        forecast_result = self.generate_comparison_forecast(mentioned_commodity)
+                    else:
+                        forecast_result = self.price_forecast_tool(mentioned_commodity)
+            
+            system_prompt = f"""You are a senior UK vegetable market analyst with deep expertise in agricultural economics, quantitative forecasting, and commodity trading.
+            
+            Your capabilities:
+            - Advanced ML forecasting using LightGBM with 23 features
+            - Baseline model comparisons (AutoARIMA, AutoETS)
+            - Semantic knowledge retrieval with MiniLM embeddings
+            - Real-time market data integration and analysis
+            - Professional trading strategy development
+            
+            Knowledge base (Semantic RAG):
+            {context}
+            
+            {f"Forecast analysis: {json.dumps(forecast_result, indent=2, default=str)}" if forecast_result else ""}
+            
+            Response guidelines:
+            - Provide quantitative insights with confidence intervals
+            - Explain model limitations and uncertainty
+            - Compare multiple forecasting approaches when relevant
+            - Offer actionable trading/procurement advice
+            - Use professional terminology but remain accessible
+            - Always mention data sources and model assumptions
+            """
+            
+            messages = []
+            for msg in chat_history[-10:]:
+                messages.append({"role": msg["role"], "content": msg["content"]})
+            messages.append({"role": "user", "content": user_message})
+            
+            if self.use_openrouter:
+                import requests
+                
+                headers = {
+                    "Authorization": f"Bearer {self.openrouter_api_key}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "https://streamlit.io",
+                    "X-Title": "Enhanced UK Vegetable Price Forecaster"
+                }
+                
+                data = {
+                    "model": "anthropic/claude-3.5-sonnet",
+                    "messages": [{"role": "system", "content": system_prompt}] + messages,
+                    "max_tokens": 1500,
+                    "temperature": 0.3,
+                    "stream": False
+                }
+                
+                response = requests.post(
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    headers=headers,
+                    json=data,
+                    timeout=30
+                )
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    return result["choices"][0]["message"]["content"]
+                else:
+                    return f"API error: {response.status_code}"
+            
+            else:
+                response = self.claude_client.messages.create(
+                    model="claude-3-5-sonnet-20241022",
+                    max_tokens=1500,
+                    system=system_prompt,
+                    messages=messages,
+                    temperature=0.3
+                )
+                return response.content[0].text
+            
+        except Exception as e:
+            return f"Enhanced chat error: {str(e)}"
+    
+    def price_forecast_tool(self, commodity: str, weeks: int = 4) -> Dict[str, Any]:
+        try:
+            if 'model' not in st.session_state or 'BUFFER' not in st.session_state:
+                return {"error": "Forecasting model not loaded"}
+            
+            model = st.session_state.model
+            BUFFER = st.session_state.BUFFER
+            
+            hist = BUFFER.xs(commodity.upper()).copy()
+            if len(hist) == 0:
+                return {"error": f"No data available for {commodity}"}
+            
+            predictions = []
+            confidence_intervals = []
+            
+            for step in range(min(weeks, 8)):
+                feats_df = build_feature_row(hist, commodity)
+                try:
+                    log_pred = model.predict(feats_df)[0]
+                except:
+                    log_pred = model.predict(feats_df, predict_disable_shape_check=True)[0]
+                
+                price = round(math.exp(log_pred), 3)
+                predictions.append(price)
+                
+                uncertainty = 0.08 + (step * 0.03)
+                lower_bound = price * (1 - uncertainty)
+                upper_bound = price * (1 + uncertainty)
+                confidence_intervals.append((lower_bound, upper_bound))
+                
+                next_week = hist.index[-1] + timedelta(days=7)
+                new_row = hist.iloc[-1:].copy()
+                new_row.index = [next_week]
+                new_row["price_gbp_kg"] = price
                 hist = pd.concat([hist, new_row]).tail(12)
             
             return {
@@ -551,10 +654,7 @@ class EnhancedVegetableForecastAssistant:
         except Exception as e:
             return {"error": f"Enhanced forecast generation failed: {str(e)}"}
 
-# ─────────────────────────────────────────────
-# ORIGINAL FORECASTING FUNCTIONS (keeping existing code)
-# ─────────────────────────────────────────────
-
+# Constants
 MODEL_PATH = "models/lgbm_weekly_tuned.pkl"
 BUFFER_PATH = "data/features_weekly.parquet"
 MAX_LAG = 12
@@ -744,7 +844,6 @@ def forecast_commodity(commodity: str, horizon: int):
             new_row_data.index = [next_week]
             new_row_data["price_gbp_kg"] = price
             
-            # Update time-based features
             week_no = next_week.isocalendar().week
             if "week_num" in new_row_data.columns:
                 new_row_data["week_num"] = int(week_no)
@@ -763,9 +862,7 @@ def forecast_commodity(commodity: str, horizon: int):
         st.error(f"Error during forecasting: {str(e)}")
         return None, None
 
-# ─────────────────────────────────────────────
-# ENHANCED STREAMLIT UI
-# ─────────────────────────────────────────────
+# UI Setup
 st.set_page_config(
     page_title="Enhanced UK Vegetable Price Forecaster",
     page_icon="🥕",
@@ -773,7 +870,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Initialize enhanced session state
+# Initialize session state
 if 'chat_history' not in st.session_state:
     st.session_state.chat_history = []
 if 'enhanced_assistant' not in st.session_state:
@@ -805,12 +902,10 @@ with col4:
 
 st.markdown("---")
 
-# Create tabs for different functionalities
+# Create tabs
 tab1, tab2, tab3, tab4 = st.tabs(["📊 Forecasting", "📈 Model Comparison", "📁 Data Upload & Retrain", "🤖 AI Assistant"])
 
-# ─────────────────────────────────────────────
-# TAB 1: ENHANCED FORECASTING
-# ─────────────────────────────────────────────
+# TAB 1: Forecasting
 with tab1:
     st.subheader("📊 Enhanced Price Forecasting")
     
@@ -851,7 +946,6 @@ with tab1:
 
     if st.button("📊 Generate Enhanced Forecast", type="primary", use_container_width=True):
         with st.spinner("🔄 Generating enhanced predictions with confidence intervals..."):
-            # Get enhanced forecast
             enhanced_result = st.session_state.enhanced_assistant.price_forecast_tool(
                 selected_commodity, forecast_horizon
             )
@@ -886,9 +980,7 @@ with tab1:
         else:
             st.error(f"Enhanced forecast failed: {enhanced_result['error']}")
 
-# ─────────────────────────────────────────────
-# TAB 2: MODEL COMPARISON
-# ─────────────────────────────────────────────
+# TAB 2: Model Comparison
 with tab2:
     st.subheader("📈 Multi-Model Comparison")
     
@@ -922,12 +1014,10 @@ with tab2:
             if 'error' not in comparison_result and comparison_result.get('comparison_data') is not None:
                 st.success("✅ Multi-model comparison completed")
                 
-                # Display comparison table
                 comparison_df = comparison_result['comparison_data']
                 st.markdown("**Model Predictions Comparison:**")
                 st.dataframe(comparison_df.round(3))
                 
-                # Create comparison chart
                 chart_data = []
                 for _, row in comparison_df.iterrows():
                     for model in ['LightGBM', 'AutoARIMA', 'AutoETS']:
@@ -954,7 +1044,6 @@ with tab2:
                 
                 st.altair_chart(comparison_chart, use_container_width=True)
                 
-                # Model performance metrics
                 st.markdown("**Model Analysis:**")
                 lightgbm_preds = comparison_df['LightGBM'].values
                 arima_preds = comparison_df['AutoARIMA'].values
@@ -976,9 +1065,7 @@ with tab2:
         else:
             st.error("StatsForecast not available for baseline model comparison")
 
-# ─────────────────────────────────────────────
-# TAB 3: DATA UPLOAD & MODEL RETRAINING
-# ─────────────────────────────────────────────
+# TAB 3: Data Upload & Model Retraining
 with tab3:
     st.subheader("📁 Data Upload & Model Retraining")
     
@@ -997,7 +1084,6 @@ with tab3:
     
     if uploaded_file is not None:
         try:
-            # Read uploaded file
             if uploaded_file.name.endswith('.csv'):
                 new_data = pd.read_csv(uploaded_file)
             else:
@@ -1006,7 +1092,6 @@ with tab3:
             st.markdown("**Data Preview:**")
             st.dataframe(new_data.head())
             
-            # Validate data
             is_valid, validation_message = st.session_state.model_retrainer.validate_uploaded_data(new_data)
             
             if is_valid:
@@ -1027,7 +1112,6 @@ with tab3:
                     if new_model is not None:
                         st.success(f"✅ {retrain_message}")
                         
-                        # Option to use new model
                         if st.button("📊 Use Retrained Model"):
                             st.session_state.model = new_model
                             st.success("Model updated! New predictions will use the retrained model.")
@@ -1040,7 +1124,6 @@ with tab3:
         except Exception as e:
             st.error(f"Error processing uploaded file: {str(e)}")
     
-    # Model performance tracking
     st.markdown("---")
     st.markdown("**Current Model Performance:**")
     
@@ -1051,15 +1134,12 @@ with tab3:
         with col2:
             st.metric("Training Features", len(st.session_state.FEAT_COLS) if 'FEAT_COLS' in st.session_state else "Unknown")
         with col3:
-            st.metric("Last Updated", "Original Model")  # Would track this in practice
+            st.metric("Last Updated", "Original Model")
 
-# ─────────────────────────────────────────────
-# TAB 4: ENHANCED AI ASSISTANT
-# ─────────────────────────────────────────────
+# TAB 4: AI Assistant
 with tab4:
     st.subheader("🤖 Enhanced AI Assistant with Semantic RAG")
     
-    # Feature indicators
     col1, col2, col3 = st.columns(3)
     with col1:
         rag_status = "✅ Active" if EMBEDDINGS_AVAILABLE else "❌ Disabled"
@@ -1071,7 +1151,6 @@ with tab4:
         model_status = "Claude 3.5 Sonnet"
         st.markdown(f"**AI Model:** {model_status}")
     
-    # Chat interface
     chat_container = st.container(height=400)
     
     with chat_container:
@@ -1079,7 +1158,6 @@ with tab4:
             with st.chat_message(message["role"]):
                 st.write(message["content"])
     
-    # Enhanced chat input
     if prompt := st.chat_input("Ask about vegetable markets, forecasts, or trading strategies..."):
         st.session_state.chat_history.append({"role": "user", "content": prompt})
         
@@ -1096,7 +1174,6 @@ with tab4:
         
         st.session_state.chat_history.append({"role": "assistant", "content": response})
     
-    # Enhanced quick actions
     st.markdown("**Enhanced Quick Actions:**")
     col1, col2, col3 = st.columns(3)
     
@@ -1133,177 +1210,5 @@ with tab4:
             st.session_state.chat_history.append({"role": "assistant", "content": response})
             st.rerun()
 
-# ─────────────────────────────────────────────
-# MINIMAL FOOTER
-# ─────────────────────────────────────────────
 st.markdown("---")
-st.write("Enhanced UK Vegetable Price Forecaster - v12") = hist.iloc[-1:].copy()
-                        new_row.index = [next_week]
-                        new_row["price_gbp_kg"] = price
-                        hist = pd.concat([hist, new_row]).tail(12)
-                    
-                    results['lightgbm'] = {
-                        'predictions': predictions,
-                        'model_name': 'LightGBM'
-                    }
-                    
-                    # Get baseline forecasts
-                    baseline_data, error = self.baseline_forecaster.forecast_baselines(
-                        BUFFER.xs(commodity.upper()), commodity, weeks
-                    )
-                    
-                    if baseline_data:
-                        results['baselines'] = baseline_data
-                        
-                        # Create comparison data for plotting
-                        future_dates = baseline_data['dates']
-                        comparison_df = pd.DataFrame({
-                            'date': future_dates,
-                            'LightGBM': predictions,
-                            'AutoARIMA': baseline_data['AutoARIMA'],
-                            'AutoETS': baseline_data['AutoETS']
-                        })
-                        
-                        results['comparison_data'] = comparison_df
-            
-            return results
-            
-        except Exception as e:
-            return {'error': f"Comparison forecast failed: {str(e)}"}
-    
-    def chat_with_enhanced_claude(self, user_message: str, chat_history: List[Dict]) -> str:
-        """Enhanced chat with semantic RAG and advanced context"""
-        try:
-            # Get enhanced context using semantic search
-            context = self.get_enhanced_context(user_message)
-            
-            # Check for forecast requests
-            forecast_result = None
-            if any(word in user_message.lower() for word in ['forecast', 'predict', 'price', 'compare']):
-                commodities = ['potato', 'carrot', 'onion', 'tomato', 'cucumber', 
-                             'lettuce', 'cabbage', 'broccoli', 'pepper', 'courgette']
-                mentioned_commodity = None
-                for commodity in commodities:
-                    if commodity in user_message.lower():
-                        mentioned_commodity = commodity
-                        break
-                
-                if mentioned_commodity:
-                    if 'compare' in user_message.lower() or 'baseline' in user_message.lower():
-                        forecast_result = self.generate_comparison_forecast(mentioned_commodity)
-                    else:
-                        forecast_result = self.price_forecast_tool(mentioned_commodity)
-            
-            # Enhanced system prompt
-            system_prompt = f"""You are a senior UK vegetable market analyst with deep expertise in agricultural economics, quantitative forecasting, and commodity trading.
-            
-            Your capabilities:
-            - Advanced ML forecasting using LightGBM with 23 features
-            - Baseline model comparisons (AutoARIMA, AutoETS)
-            - Semantic knowledge retrieval with MiniLM embeddings
-            - Real-time market data integration and analysis
-            - Professional trading strategy development
-            
-            Knowledge base (Semantic RAG):
-            {context}
-            
-            {f"Forecast analysis: {json.dumps(forecast_result, indent=2, default=str)}" if forecast_result else ""}
-            
-            Response guidelines:
-            - Provide quantitative insights with confidence intervals
-            - Explain model limitations and uncertainty
-            - Compare multiple forecasting approaches when relevant
-            - Offer actionable trading/procurement advice
-            - Use professional terminology but remain accessible
-            - Always mention data sources and model assumptions
-            """
-            
-            # Prepare messages
-            messages = []
-            for msg in chat_history[-10:]:
-                messages.append({"role": msg["role"], "content": msg["content"]})
-            messages.append({"role": "user", "content": user_message})
-            
-            # API call (same as before but with enhanced context)
-            if self.use_openrouter:
-                import requests
-                
-                headers = {
-                    "Authorization": f"Bearer {self.openrouter_api_key}",
-                    "Content-Type": "application/json",
-                    "HTTP-Referer": "https://streamlit.io",
-                    "X-Title": "Enhanced UK Vegetable Price Forecaster"
-                }
-                
-                data = {
-                    "model": "anthropic/claude-3.5-sonnet",
-                    "messages": [{"role": "system", "content": system_prompt}] + messages,
-                    "max_tokens": 1500,
-                    "temperature": 0.3,
-                    "stream": False
-                }
-                
-                response = requests.post(
-                    "https://openrouter.ai/api/v1/chat/completions",
-                    headers=headers,
-                    json=data,
-                    timeout=30
-                )
-                
-                if response.status_code == 200:
-                    result = response.json()
-                    return result["choices"][0]["message"]["content"]
-                else:
-                    return f"API error: {response.status_code}"
-            
-            else:
-                response = self.claude_client.messages.create(
-                    model="claude-3-5-sonnet-20241022",
-                    max_tokens=1500,
-                    system=system_prompt,
-                    messages=messages,
-                    temperature=0.3
-                )
-                return response.content[0].text
-            
-        except Exception as e:
-            return f"Enhanced chat error: {str(e)}"
-    
-    def price_forecast_tool(self, commodity: str, weeks: int = 4) -> Dict[str, Any]:
-        """Enhanced price forecast with confidence intervals"""
-        try:
-            if 'model' not in st.session_state or 'BUFFER' not in st.session_state:
-                return {"error": "Forecasting model not loaded"}
-            
-            model = st.session_state.model
-            BUFFER = st.session_state.BUFFER
-            
-            hist = BUFFER.xs(commodity.upper()).copy()
-            if len(hist) == 0:
-                return {"error": f"No data available for {commodity}"}
-            
-            predictions = []
-            confidence_intervals = []
-            
-            for step in range(min(weeks, 8)):
-                feats_df = build_feature_row(hist, commodity)
-                try:
-                    log_pred = model.predict(feats_df)[0]
-                except:
-                    log_pred = model.predict(feats_df, predict_disable_shape_check=True)[0]
-                
-                price = round(math.exp(log_pred), 3)
-                predictions.append(price)
-                
-                # Calculate confidence intervals (simplified)
-                # In practice, you'd use quantile regression or bootstrap
-                uncertainty = 0.08 + (step * 0.03)  # Increasing uncertainty
-                lower_bound = price * (1 - uncertainty)
-                upper_bound = price * (1 + uncertainty)
-                confidence_intervals.append((lower_bound, upper_bound))
-                
-                # Update history
-                next_week = hist.index[-1] + timedelta(days=7)
-                new_row = hist.iloc[-1:].copy()
-                new_row.index = [next_week]
-                new_row
+st.write("Enhanced UK Vegetable Price Forecaster - v12")
