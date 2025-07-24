@@ -1134,37 +1134,10 @@ with tab4:
             st.rerun()
 
 # ─────────────────────────────────────────────
-# FOOTER SECTIONS
+# MINIMAL FOOTER
 # ─────────────────────────────────────────────
 st.markdown("---")
-
-# Simple expandable sections without complex formatting
-with st.expander("🚀 Enhanced Features"):
-    st.write("**New Features Added:**")
-    st.write("• Semantic RAG with MiniLM Embeddings")
-    st.write("• Baseline Model Comparison (AutoARIMA, AutoETS)")
-    st.write("• CSV Upload & Model Retraining")
-    st.write("• Enhanced AI Assistant with Confidence Intervals")
-    
-    st.write("**Installation:**")
-    st.code("pip install sentence-transformers faiss-cpu statsforecast lightgbm")
-    
-    st.write("**Configuration:**")
-    st.write("Add to .streamlit/secrets.toml:")
-    st.code('USE_OPENROUTER = "true"\nOPENROUTER_API_KEY = "your-key"')
-
-with st.expander("🧪 Future Features"):
-    st.write("**Planned Enhancements:**")
-    st.write("• Local Llama 3 Fine-tuning with LoRA")
-    st.write("• Real-time Data Integration")
-    st.write("• Advanced Risk Models (VaR, Monte Carlo)")
-    st.write("• Mobile Dashboard")
-    st.write("• Multi-Agent System")
-
-# Simple footer
-st.markdown("---")
-st.write("**Enhanced UK Vegetable Price Forecaster**")
-st.write("LightGBM + AutoARIMA + AutoETS + Claude 3.5 Sonnet | Semantic RAG | Real-time Retraining") = hist.iloc[-1:].copy()
+st.write("Enhanced UK Vegetable Price Forecaster - v12") = hist.iloc[-1:].copy()
                         new_row.index = [next_week]
                         new_row["price_gbp_kg"] = price
                         hist = pd.concat([hist, new_row]).tail(12)
