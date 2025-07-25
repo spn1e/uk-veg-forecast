@@ -1,63 +1,44 @@
-# ─────────────────────────────────────────────
-# CORE STREAMLIT AND DATA PROCESSING
-# ─────────────────────────────────────────────
+# Core Streamlit and Data Processing
 streamlit>=1.28.0
 pandas>=2.0.0
 numpy>=1.24.0
-
-# ─────────────────────────────────────────────
-# MACHINE LEARNING & FORECASTING
-# ─────────────────────────────────────────────
+pysqlite3-binary
+# Machine Learning
 joblib>=1.3.0
 lightgbm>=4.0.0
 scikit-learn>=1.3.0
-statsforecast>=1.6.0  # NEW: For AutoARIMA/AutoETS baseline models
 
-# ─────────────────────────────────────────────
-# SEMANTIC RAG & VECTOR SEARCH
-# ─────────────────────────────────────────────
-sentence-transformers>=2.2.2  # NEW: For MiniLM embeddings
-faiss-cpu>=1.7.4              # NEW: For vector similarity search
-# Alternative for GPU: faiss-gpu>=1.7.4
-
-# ─────────────────────────────────────────────
-# AI ASSISTANT & API CLIENTS
-# ─────────────────────────────────────────────
-anthropic>=0.7.0     # For direct Anthropic API
-requests>=2.31.0     # For OpenRouter API calls
-
-# ─────────────────────────────────────────────
-# VISUALIZATION & CHARTS
-# ─────────────────────────────────────────────
+# Visualization
 altair>=5.0.0
 plotly>=5.15.0
 
-# ─────────────────────────────────────────────
-# DATA FORMAT SUPPORT
-# ─────────────────────────────────────────────
-pyarrow>=13.0.0      # For parquet files
-fastparquet>=0.8.3   # Alternative parquet reader
-openpyxl>=3.1.0      # For Excel file uploads
+# AI Assistant and RAG
+anthropic>=0.7.0  # For direct Anthropic API (optional)
+requests>=2.31.0  # For OpenRouter API calls
 
-# ─────────────────────────────────────────────
-# UTILITIES
-# ─────────────────────────────────────────────
+langchain>=0.0.350
+langchain-community>=0.0.10
+chromadb
+python-dotenv
+pydantic<2.0.0
+# Vector Database Dependencies
+sentence-transformers>=2.2.2
+tiktoken>=0.5.0
+openai>=1.0.0  # Required by some ChromaDB embeddings
+
+# Data Format Support
+pyarrow>=13.0.0  # For parquet files
+fastparquet>=0.8.3
+
+# Utilities
 python-dateutil>=2.8.2
-python-dotenv        # For environment variables
+urllib3>=2.0.0
 
-# ─────────────────────────────────────────────
-# OPTIONAL PERFORMANCE ENHANCEMENTS
-# ─────────────────────────────────────────────
-numba>=0.58.0        # For faster numerical computations
-psutil>=5.9.0        # For system monitoring
+# Optional Performance Enhancements
+numba>=0.58.0  # For faster numerical computations
+psutil>=5.9.0  # For system monitoring
 
-# ─────────────────────────────────────────────
-# REMOVED DEPENDENCIES (causing SQLite issues)
-# ─────────────────────────────────────────────
-# chromadb           # REMOVED: Causes SQLite version conflicts
-# pysqlite3-binary   # REMOVED: Not needed with our solution
-# langchain          # REMOVED: Not used in our implementation
-# langchain-community # REMOVED: Not used
-# tiktoken           # REMOVED: Not needed
-# openai             # REMOVED: Not used directly
-# pydantic<2.0.0     # REMOVED: Not needed with current approach
+# Development and Testing (optional)
+pytest>=7.4.0
+black>=23.0.0
+flake8>=6.0.0
