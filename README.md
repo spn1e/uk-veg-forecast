@@ -40,7 +40,7 @@ A one‑page Streamlit web‑app that **forecasts weekly wholesale prices for UK
 ## 🗺️  Data Pipeline
 
 <p align="center">
-  <img src="docs/dataset_collection.png" width="350">
+
 </p>
 
 | Source (raw) | Rows | Period | Notes |
@@ -54,6 +54,7 @@ A one‑page Streamlit web‑app that **forecasts weekly wholesale prices for UK
 
 All are merged into **`features_weekly.parquet`** – the model‑ready feature matrix containing 23 engineered predictors (lags, rolling stats, seasonality, weather, macro).
 
+  <img src="assests/Data_Pipeline.png" width="350">
 ---
 
 ## ⚙️  Tech Stack
@@ -69,8 +70,9 @@ All are merged into **`features_weekly.parquet`** – the model‑ready feature 
 | **RAG** | **SimpleVectorStore** (in‑memory) | Zero external DB; avoids ChromaDB/SQLite issues |
 | **LLM** | **Anthropic Claude 3.5 Sonnet** via OpenRouter _(or direct API)_ | Cheap, fast, state‑of‑the‑art reasoning |
 | **Vis** | **Altair** | Interactive charts with declarative grammar |
+  <img src="/assests/techstack.PNG" width="880">
 ---
-  <img src="/assests/techstack.png" width="880">
+
 ## 🚀 Quick Start
 
 ```bash
