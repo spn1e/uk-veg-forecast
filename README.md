@@ -59,7 +59,7 @@ All are merged into **`features_weekly.parquet`** – the model‑ready feature 
 ## ⚙️  Tech Stack
 
 <p align="center">
-  <img src="docs/tech_stack.png" width="880">
+
 </p>
 
 | Layer | Library / Service | Why |
@@ -70,7 +70,7 @@ All are merged into **`features_weekly.parquet`** – the model‑ready feature 
 | **LLM** | **Anthropic Claude 3.5 Sonnet** via OpenRouter _(or direct API)_ | Cheap, fast, state‑of‑the‑art reasoning |
 | **Vis** | **Altair** | Interactive charts with declarative grammar |
 ---
-
+  <img src="/assests/techstack.png" width="880">
 ## 🚀 Quick Start
 
 ```bash
