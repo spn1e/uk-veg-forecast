@@ -10,7 +10,7 @@
 
 A one‑page Streamlit web‑app that **forecasts weekly wholesale prices for UK vegetables** and pairs the prediction engine with a **conversational AI analyst** (Claude 3.5 Sonnet) that can answer market questions, explain the model and surface domain knowledge.
 
-<img src="assets/screenshot.png" alt="app screenshot" width="800"/>
+<img src="/assests/screenshot.png" alt="app screenshot" width="800"/>
 
 ---
 
