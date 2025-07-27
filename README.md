@@ -37,7 +37,38 @@ A one‑page Streamlit web‑app that **forecasts weekly wholesale prices for UK
 │   └── screenshot.png
 └── requirements.txt
 ```
+## 🗺️  Data Pipeline
 
+<p align="center">
+  <img src="docs/dataset_collection.png" width="350">
+</p>
+
+| Source (raw) | Rows | Period | Notes |
+|--------------|------|--------|-------|
+| **UK Fruit & Veg Prices** | 24 k | 2014‑2024 | Weekly DEFRA prices |
+| **UK Horticulture Dataset**  | 14 k | 2014‑2025 | Additional crop lines |
+| **UK Holidays**  | 4 k | 2014‑2025 | Bank‑holiday flags |
+| **USD/GBP FX**  | 2.9 k | 2014‑2025 | Daily → weekly AVG |
+| **Brent Oil**  | 2.9 k | 2014‑2025 | Energy cost proxy |
+| **Weather** (5 UK Met stations, 11 yrs) | 165 × 365 | 2014‑2025 | Temp / Rain / Sunshine |
+
+All are merged into **`features_weekly.parquet`** – the model‑ready feature matrix containing 23 engineered predictors (lags, rolling stats, seasonality, weather, macro).
+
+---
+
+## ⚙️  Tech Stack
+
+<p align="center">
+  <img src="docs/tech_stack.png" width="880">
+</p>
+
+| Layer | Library / Service | Why |
+|-------|-------------------|-----|
+| **Model** | **LightGBM** + joblib | Fast tabular GBM, 13 % MAE improvement after tuning |
+| **UI / API** | **Streamlit** | One‑file deploy on Streamlit Cloud |
+| **RAG** | **SimpleVectorStore** (in‑memory) | Zero external DB; avoids ChromaDB/SQLite issues |
+| **LLM** | **Anthropic Claude 3.5 Sonnet** via OpenRouter _(or direct API)_ | Cheap, fast, state‑of‑the‑art reasoning |
+| **Vis** | **Altair** | Interactive charts with declarative grammar |
 ---
 
 ## 🚀 Quick Start
